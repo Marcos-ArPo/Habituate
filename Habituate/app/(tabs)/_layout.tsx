@@ -1,6 +1,6 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter, usePathname } from 'expo-router';
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -10,6 +10,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const isHomeActive = pathname === '/(tabs)' || pathname === '/(tabs)/index';
+  const isHabitosActive = pathname === '/(tabs)/habitosDia';
 
   return (
     <View style={styles.container}>
@@ -34,24 +39,45 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
           }}
         />
+        <Tabs.Screen
+          name="habitosDia"
+          options={{
+            title: 'Hábitos del Día',
+            tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          }}
+        />
       </Tabs>
 
       <View style={styles.bottomNav}>
-        <View style={styles.navItem}>
+        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
           <Ionicons name="add-outline" size={26} color="#9ca3af" />
-        </View>
-        <View style={styles.navItem}>
+        </Pressable>
+        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
           <Ionicons name="call-outline" size={24} color="#9ca3af" />
-        </View>
-        <View style={styles.navItem}>
-          <Ionicons name="home" size={24} color="#000000" />
-        </View>
-        <View style={styles.navItem}>
-          <Ionicons name="notifications-outline" size={24} color="#9ca3af" />
-        </View>
-        <View style={styles.navItem}>
+        </Pressable>
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)')}
+        >
+          <Ionicons
+            name="home"
+            size={24}
+            color={isHomeActive ? '#000000' : '#9ca3af'}
+          />
+        </Pressable>
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/habitosDia')}
+        >
+          <Ionicons
+            name="notifications-outline"
+            size={24}
+            color={isHabitosActive ? '#000000' : '#9ca3af'}
+          />
+        </Pressable>
+        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
           <Ionicons name="person-outline" size={24} color="#9ca3af" />
-        </View>
+        </Pressable>
       </View>
     </View>
   );

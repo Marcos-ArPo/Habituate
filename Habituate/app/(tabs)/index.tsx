@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ function buildLinePath(points: Point[]) {
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const days = useMemo(
     () => ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
     []
@@ -69,7 +71,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide}>
           <Ionicons name="person-outline" size={18} color="#111" />
         </View>
