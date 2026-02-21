@@ -13,9 +13,10 @@ export default function TabLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const isHomeActive = pathname === '/(tabs)' || pathname === '/(tabs)/index';
-  const isHabitosActive = pathname === '/(tabs)/habitosDia';
+  const isHomeActive = pathname === '/';
+  const isHabitosActive = pathname === '/habitosDia';
 
+  console.log('Current pathname:', pathname);
   return (
     <View style={styles.container}>
       <Tabs
