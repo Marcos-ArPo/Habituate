@@ -15,8 +15,8 @@ export default function TabLayout() {
 
   const isHomeActive = pathname === '/';
   const isHabitosActive = pathname === '/habitosDia';
+  const isPerfilActive = pathname === '/pantallaPerfil';
 
-  console.log('Current pathname:', pathname);
   return (
     <View style={styles.container}>
       <Tabs
@@ -45,6 +45,13 @@ export default function TabLayout() {
           options={{
             title: 'Hábitos del Día',
             tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="pantallaPerfil"
+          options={{
+            title: 'Perfil',
+            tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
           }}
         />
       </Tabs>
@@ -76,8 +83,15 @@ export default function TabLayout() {
             color={isHabitosActive ? '#000000' : '#9ca3af'}
           />
         </Pressable>
-        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
-          <Ionicons name="person-outline" size={24} color="#9ca3af" />
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/pantallaPerfil')}
+        >
+          <Ionicons
+            name="person-outline"
+            size={24}
+            color={isPerfilActive ? '#000000' : '#9ca3af'}
+          />
         </Pressable>
       </View>
     </View>
