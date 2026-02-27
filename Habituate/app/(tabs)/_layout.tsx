@@ -16,6 +16,7 @@ export default function TabLayout() {
   const isHomeActive = pathname === '/';
   const isHabitosActive = pathname === '/habitosDia';
   const isPerfilActive = pathname === '/pantallaPerfil';
+  const isEmergenciaActive = pathname === '/pantallaEmergencia';
 
   return (
     <View style={styles.container}>
@@ -48,6 +49,13 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="pantallaEmergencia"
+          options={{
+            title: 'Urgencias',
+            tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          }}
+        />
+        <Tabs.Screen
           name="pantallaPerfil"
           options={{
             title: 'Perfil',
@@ -58,10 +66,17 @@ export default function TabLayout() {
 
       <View style={styles.bottomNav}>
         <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
-          <Ionicons name="add-outline" size={26} color="#9ca3af" />
+          <Ionicons name="cog-outline" size={26} color="#9ca3af" />
         </Pressable>
-        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
-          <Ionicons name="call-outline" size={24} color="#9ca3af" />
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/pantallaEmergencia')}
+        >
+          <Ionicons
+            name="call-outline"
+            size={24}
+            color={isEmergenciaActive ? '#000000' : '#9ca3af'}
+          />
         </Pressable>
         <Pressable
           style={styles.navItem}
