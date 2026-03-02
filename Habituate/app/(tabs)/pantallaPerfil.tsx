@@ -1,7 +1,10 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AppText } from '@/components/app-text';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type ProfileFieldProps = {
   label: string;
@@ -9,13 +12,26 @@ type ProfileFieldProps = {
   secure?: boolean;
 };
 
-function ProfileField({ label, value, secure = false }: ProfileFieldProps) {
+function ProfileField({
+  label,
+  value,
+  secure = false,
+  textColor,
+  mutedColor,
+  borderColor,
+  surfaceColor,
+}: ProfileFieldProps & {
+  textColor: string;
+  mutedColor: string;
+  borderColor: string;
+  surfaceColor: string;
+}) {
   return (
     <View style={styles.fieldBlock}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.fieldInput}>
-        <Text style={styles.fieldValue}>{secure ? '••••••••••••••••' : value}</Text>
-        <Ionicons name="pencil" size={14} color="#111111" />
+      <AppText style={[styles.fieldLabel, { color: textColor }]}>{label}</AppText>
+      <View style={[styles.fieldInput, { borderColor, backgroundColor: surfaceColor }]}> 
+        <AppText style={[styles.fieldValue, { color: mutedColor }]}>{secure ? '••••••••••••••••' : value}</AppText>
+        <Ionicons name="pencil" size={14} color={textColor} />
       </View>
     </View>
   );
@@ -23,11 +39,12 @@ function ProfileField({ label, value, secure = false }: ProfileFieldProps) {
 
 export default function PantallaPerfilScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <Text style={styles.headerTitle}>Perfil</Text>
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Perfil</AppText>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -36,22 +53,47 @@ export default function PantallaPerfilScreen() {
             <Ionicons name="person" size={22} color="#ffffff" />
           </View>
           <View style={styles.nameWrap}>
-            <Text style={styles.nameText}>Akinfenwa Miano Mwanga</Text>
+            <AppText style={[styles.nameText, { color: colors.text }]}>Akinfenwa Miano Mwanga</AppText>
           </View>
-          <Ionicons name="person-add-outline" size={16} color="#6b7280" />
+          <Ionicons name="person-add-outline" size={16} color={colors.mutedText} />
         </View>
 
-        <ProfileField label="Correo Electrónico" value="akinimawang@gmail.es" />
-        <ProfileField label="Contraseña" value="••••••••" secure />
-        <ProfileField label="Número Preferencia" value="+38 666 066 660" />
-        <ProfileField label="Número Urgencia" value="911" />
+        <ProfileField
+          label="Correo Electrónico"
+          value="akinimawang@gmail.es"
+          textColor={colors.text}
+          mutedColor={colors.mutedText}
+          borderColor={colors.border}
+          surfaceColor={colors.surface}
+        />
+        <ProfileField
+          label="Contraseña"
+          value="••••••••"
+          secure
+          textColor={colors.text}
+          mutedColor={colors.mutedText}
+          borderColor={colors.border}
+          surfaceColor={colors.surface}
+        />
+        <ProfileField
+          label="Número Preferencia"
+          value="+38 666 066 660"
+          textColor={colors.text}
+          mutedColor={colors.mutedText}
+          borderColor={colors.border}
+          surfaceColor={colors.surface}
+        />
+        <ProfileField
+          label="Número Urgencia"
+          value="911"
+          textColor={colors.text}
+          mutedColor={colors.mutedText}
+          borderColor={colors.border}
+          surfaceColor={colors.surface}
+        />
 
-        <Pressable style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Ajustes</Text>
-        </Pressable>
-
-        <Pressable style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Cerrar Sesión</Text>
+        <Pressable style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
+          <AppText style={[styles.primaryButtonText, { color: colors.onPrimary }]}>Cerrar Sesión</AppText>
         </Pressable>
       </ScrollView>
     </View>
@@ -61,7 +103,6 @@ export default function PantallaPerfilScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   header: {
     paddingTop: 14,
@@ -137,7 +178,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   primaryButtonText: {
-    color: '#ffffff',
     fontSize: 12,
     fontWeight: '600',
   },

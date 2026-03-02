@@ -2,21 +2,26 @@ import { Tabs, useRouter, usePathname } from 'expo-router';
 import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   const isHomeActive = pathname === '/';
   const isHabitosActive = pathname === '/habitosDia';
   const isPerfilActive = pathname === '/pantallaPerfil';
   const isEmergenciaActive = pathname === '/pantallaEmergencia';
+  const isAjustesActive = pathname === '/pantallaAjustes';
 
   return (
     <View style={styles.container}>
@@ -62,11 +67,26 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
           }}
         />
+        <Tabs.Screen
+          name="pantallaAjustes"
+          options={{
+            title: 'Ajustes',
+            tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
+          }}
+        />
       </Tabs>
 
-      <View style={styles.bottomNav}>
-        <Pressable style={styles.navItem} onPress={() => router.push('/(tabs)')}>
-          <Ionicons name="cog-outline" size={26} color="#9ca3af" />
+      <View
+        style={[
+          styles.bottomNav,
+          {
+            paddingBottom: insets.bottom + 12,
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+          },
+        ]}>
+        <Pressable style={styles.navItem} onPress={() => router.push('/pantallaAjustes' as never)}>
+          <Ionicons name="cog-outline" size={26} color={isAjustesActive ? colors.text : colors.mutedText} />
         </Pressable>
         <Pressable
           style={styles.navItem}
@@ -75,7 +95,7 @@ export default function TabLayout() {
           <Ionicons
             name="call-outline"
             size={24}
-            color={isEmergenciaActive ? '#000000' : '#9ca3af'}
+            color={isEmergenciaActive ? colors.text : colors.mutedText}
           />
         </Pressable>
         <Pressable
@@ -85,7 +105,7 @@ export default function TabLayout() {
           <Ionicons
             name="home"
             size={24}
-            color={isHomeActive ? '#000000' : '#9ca3af'}
+            color={isHomeActive ? colors.text : colors.mutedText}
           />
         </Pressable>
         <Pressable
@@ -95,7 +115,7 @@ export default function TabLayout() {
           <Ionicons
             name="notifications-outline"
             size={24}
-            color={isHabitosActive ? '#000000' : '#9ca3af'}
+            color={isHabitosActive ? colors.text : colors.mutedText}
           />
         </Pressable>
         <Pressable
@@ -105,7 +125,7 @@ export default function TabLayout() {
           <Ionicons
             name="person-outline"
             size={24}
-            color={isPerfilActive ? '#000000' : '#9ca3af'}
+            color={isPerfilActive ? colors.text : colors.mutedText}
           />
         </Pressable>
       </View>
@@ -121,11 +141,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 12,
+    paddingTop: 12,
     paddingHorizontal: 20,
-    backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
   },
   navItem: {
     alignItems: 'center',

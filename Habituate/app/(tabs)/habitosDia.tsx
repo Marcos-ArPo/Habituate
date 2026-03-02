@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { AppText } from '@/components/app-text';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type Habit = {
   name: string;
@@ -12,6 +14,7 @@ type Habit = {
 
 export default function HabitosDiaScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const [selectedDay, setSelectedDay] = useState('Hoy');
   const days = useMemo(() => ['Hoy', 'Mañana', 'Miércoles', 'Jueves'], []);
 
@@ -27,10 +30,10 @@ export default function HabitosDiaScreen() {
   );
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide} />
-        <Text style={styles.headerTitle}>Hábitos del Día</Text>
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Hábitos del Día</AppText>
         <View style={styles.headerSide} />
       </View>
 
@@ -41,35 +44,39 @@ export default function HabitosDiaScreen() {
             onPress={() => setSelectedDay(day)}
             style={[
               styles.dayButton,
+              { backgroundColor: colors.elevated },
               selectedDay === day && styles.dayButtonActive,
             ]}
           >
-            <Text
+            <AppText
               style={[
                 styles.dayButtonText,
                 selectedDay === day && styles.dayButtonTextActive,
+                { color: selectedDay === day ? colors.onPrimary : colors.mutedText },
               ]}
             >
               {day}
-            </Text>
+            </AppText>
           </Pressable>
         ))}
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {habits.map((habit) => (
-          <View key={habit.name} style={styles.habitCard}>
+          <View
+            key={habit.name}
+            style={[styles.habitCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.habitContent}>
-              <View style={styles.iconContainer}>
-                <Ionicons name={habit.icon} size={24} color="#2f6bff" />
+              <View style={[styles.iconContainer, { backgroundColor: colors.elevated }]}>
+                <Ionicons name={habit.icon} size={24} color={colors.accent} />
               </View>
               <View style={styles.habitInfo}>
-                <Text style={styles.habitName}>{habit.name}</Text>
-                <Text style={styles.habitTime}>{habit.time}</Text>
+                <AppText style={[styles.habitName, { color: colors.text }]}>{habit.name}</AppText>
+                <AppText style={[styles.habitTime, { color: colors.mutedText }]}>{habit.time}</AppText>
               </View>
             </View>
-            <Pressable style={styles.markButton}>
-              <Text style={styles.markButtonText}>Marcar</Text>
+            <Pressable style={[styles.markButton, { backgroundColor: colors.primary }]}>
+              <AppText style={[styles.markButtonText, { color: colors.onPrimary }]}>Marcar</AppText>
             </Pressable>
           </View>
         ))}
@@ -81,7 +88,6 @@ export default function HabitosDiaScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   header: {
     paddingTop: 14,
@@ -119,7 +125,6 @@ const styles = StyleSheet.create({
   dayButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666666',
   },
   dayButtonTextActive: {
     color: '#ffffff',

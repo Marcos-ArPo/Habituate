@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
+import { SettingsProvider, useAppSettings } from '@/context/settings-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -10,10 +11,19 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+  return (
+    <SettingsProvider>
+      <RootNavigator />
+    </SettingsProvider>
+  );
+}
+
+function RootNavigator() {
   const colorScheme = useColorScheme();
+  const { colorScheme: appColorScheme } = useAppSettings();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={(appColorScheme ?? colorScheme) === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

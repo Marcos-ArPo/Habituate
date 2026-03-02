@@ -1,33 +1,37 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppText } from '@/components/app-text';
+import { useAppTheme } from '@/hooks/use-app-theme';
+
 export default function PantallaEmergenciaScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.screen}>
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <Text style={styles.headerTitle}>Urgencias</Text>
+    <View style={[styles.screen, { backgroundColor: colors.elevated }]}> 
+      <View style={[styles.header, { paddingTop: insets.top, backgroundColor: colors.surface }]}> 
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Urgencias</AppText>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <View style={styles.iconWrap}>
-            <Ionicons name="business-outline" size={22} color="#111111" />
+            <Ionicons name="business-outline" size={22} color={colors.text} />
           </View>
-          <Pressable style={styles.actionButton}>
-            <Text style={styles.actionButtonText}>Llamada de Emergencia</Text>
+          <Pressable style={[styles.actionButton, { backgroundColor: colors.primary }]}>
+            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Llamada de Emergencia</AppText>
           </Pressable>
         </View>
 
         <View style={styles.section}>
           <View style={styles.iconWrap}>
-            <Ionicons name="accessibility-outline" size={22} color="#111111" />
+            <Ionicons name="accessibility-outline" size={22} color={colors.text} />
           </View>
-          <Pressable style={styles.actionButton}>
-            <Text style={styles.actionButtonText}>Llamada Preferente</Text>
+          <Pressable style={[styles.actionButton, { backgroundColor: colors.primary }]}>
+            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Llamada Preferente</AppText>
           </Pressable>
         </View>
       </ScrollView>
@@ -38,14 +42,12 @@ export default function PantallaEmergenciaScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#e5e5e5',
   },
   header: {
     paddingTop: 14,
     paddingHorizontal: 16,
     paddingBottom: 10,
     alignItems: 'center',
-    backgroundColor: '#ffffff',
   },
   headerTitle: {
     fontSize: 18,
@@ -73,7 +75,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   actionButtonText: {
-    color: '#ffffff',
     fontSize: 11,
     fontWeight: '500',
   },

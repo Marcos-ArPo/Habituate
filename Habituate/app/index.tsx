@@ -4,17 +4,19 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppText } from '@/components/app-text';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -23,18 +25,26 @@ export default function LoginScreen() {
   }, [email, password]);
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View
+      style={[
+        styles.safeArea,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          backgroundColor: colors.background,
+        },
+      ]}>
       <KeyboardAvoidingView
         behavior={Platform.select({ ios: 'padding', android: undefined })}
         style={styles.keyboardAvoid}
       >
         <View style={styles.container}>
-          <Text style={styles.title}>Habituate</Text>
+          <AppText style={[styles.title, { color: colors.text }]}>Habituate</AppText>
 
-          <Text style={styles.subtitle}>Accede a tu cuenta</Text>
-          <Text style={styles.description}>
+          <AppText style={[styles.subtitle, { color: colors.text }]}>Accede a tu cuenta</AppText>
+          <AppText style={[styles.description, { color: colors.mutedText }]}> 
             Introduce tu correo electrónico para iniciar sesión en{`\n`}esta aplicación
-          </Text>
+          </AppText>
 
           <View style={styles.form}>
             <TextInput
@@ -46,8 +56,8 @@ export default function LoginScreen() {
               textContentType="emailAddress"
               autoComplete="email"
               returnKeyType="next"
-              style={styles.input}
-              placeholderTextColor="#9aa0a6"
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholderTextColor={colors.mutedText}
             />
 
             <TextInput
@@ -58,8 +68,8 @@ export default function LoginScreen() {
               textContentType="password"
               autoComplete="password"
               returnKeyType="done"
-              style={styles.input}
-              placeholderTextColor="#9aa0a6"
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              placeholderTextColor={colors.mutedText}
             />
 
             <Pressable
@@ -68,20 +78,21 @@ export default function LoginScreen() {
               disabled={isDisabled}
               style={({ pressed }) => [
                 styles.button,
+                { backgroundColor: colors.primary },
                 isDisabled && styles.buttonDisabled,
                 pressed && !isDisabled && styles.buttonPressed,
               ]}
             >
-              <Text style={styles.buttonText}>Continuar</Text>
+              <AppText style={[styles.buttonText, { color: colors.onPrimary }]}>Continuar</AppText>
             </Pressable>
           </View>
 
           <View style={styles.termsContainer}>
-            <Text style={styles.termsText}>
+            <AppText style={[styles.termsText, { color: colors.mutedText }]}> 
               Al hacer clic en continuar, aceptas nuestros{' '}
-              <Text style={styles.termsLink}>Términos de Servicio</Text> y nuestra{' '}
-              <Text style={styles.termsLink}>Política de Privacidad</Text>
-            </Text>
+              <AppText style={[styles.termsLink, { color: colors.mutedText }]}>Términos de Servicio</AppText> y nuestra{' '}
+              <AppText style={[styles.termsLink, { color: colors.mutedText }]}>Política de Privacidad</AppText>
+            </AppText>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -92,7 +103,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   keyboardAvoid: {
     flex: 1,
@@ -152,7 +162,6 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   buttonText: {
-    color: '#ffffff',
     fontSize: 13,
     fontWeight: '600',
   },
