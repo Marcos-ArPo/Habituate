@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
@@ -29,10 +29,16 @@ export default function HomeScreen() {
 
   const data = useMemo(() => [1, 4, 3, 6, 10, 8, 18], []);
   const yTicks = useMemo(() => [0, 5, 10, 15, 20], []);
+  const [chartContainerWidth, setChartContainerWidth] = useState(260);
+
+  const onChartLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0) setChartContainerWidth(w);
+  };
 
   const chart = useMemo(() => {
-    const width = 260;
-    const height = 130;
+    const width = chartContainerWidth;
+    const height = Math.max(130, width * 0.45);
     const padding = 8;
     const maxY = 20;
     const minY = 0;
@@ -60,7 +66,7 @@ export default function HomeScreen() {
       plotW,
       plotH,
     };
-  }, [data]);
+  }, [data, chartContainerWidth]);
 
   const completed = useMemo(
     () => [
@@ -96,8 +102,8 @@ export default function HomeScreen() {
                   </AppText>
                 ))}
             </View>
-            <View style={styles.chartArea}>
-              <Svg width={chart.width} height={chart.height}>
+            <View style={styles.chartArea} onLayout={onChartLayout}>
+              <Svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`}>
                 {yTicks.map((t) => {
                   const tY = t / 20;
                   const y = chart.padding + (1 - tY) * chart.plotH;

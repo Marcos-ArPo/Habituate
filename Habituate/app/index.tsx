@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +20,8 @@ export default function LoginScreen() {
   const { colors } = useAppTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const { width } = useWindowDimensions();
+  const isWide = width >= 768;
 
   const isDisabled = useMemo(() => {
     return email.trim().length === 0 || password.trim().length === 0;
@@ -39,14 +42,14 @@ export default function LoginScreen() {
         style={styles.keyboardAvoid}
       >
         <View style={styles.container}>
-          <AppText style={[styles.title, { color: colors.text }]}>Habituate</AppText>
+          <AppText style={[styles.title, isWide && styles.titleWide, { color: colors.text }]}>Habituate</AppText>
 
-          <AppText style={[styles.subtitle, { color: colors.text }]}>Accede a tu cuenta</AppText>
-          <AppText style={[styles.description, { color: colors.mutedText }]}> 
+          <AppText style={[styles.subtitle, isWide && styles.subtitleWide, { color: colors.text }]}>Accede a tu cuenta</AppText>
+          <AppText style={[styles.description, isWide && styles.descriptionWide, { color: colors.mutedText }]}> 
             Introduce tu correo electrónico para iniciar sesión en{`\n`}esta aplicación
           </AppText>
 
-          <View style={styles.form}>
+          <View style={[styles.form, isWide && styles.formWide]}>
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -56,7 +59,7 @@ export default function LoginScreen() {
               textContentType="emailAddress"
               autoComplete="email"
               returnKeyType="next"
-              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholderTextColor={colors.mutedText}
             />
 
@@ -68,7 +71,7 @@ export default function LoginScreen() {
               textContentType="password"
               autoComplete="password"
               returnKeyType="done"
-              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholderTextColor={colors.mutedText}
             />
 
@@ -78,6 +81,7 @@ export default function LoginScreen() {
               disabled={isDisabled}
               style={({ pressed }) => [
                 styles.button,
+                isWide && styles.buttonWide,
                 { backgroundColor: colors.primary },
                 isDisabled && styles.buttonDisabled,
                 pressed && !isDisabled && styles.buttonPressed,
@@ -204,5 +208,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textDecorationLine: 'underline',
     color: '#9ca3af',
+  },
+  titleWide: {
+    fontSize: 32,
+    marginBottom: 48,
+  },
+  subtitleWide: {
+    fontSize: 22,
+    marginBottom: 14,
+  },
+  descriptionWide: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  formWide: {
+    maxWidth: 480,
+    gap: 14,
+  },
+  inputWide: {
+    height: 52,
+    fontSize: 16,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+  },
+  buttonWide: {
+    height: 52,
+    borderRadius: 10,
   },
 });
