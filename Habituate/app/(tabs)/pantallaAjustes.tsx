@@ -105,7 +105,7 @@ export default function PantallaAjustesScreen() {
             <Slider
               minimumValue={FONT_SCALE_MIN}
               maximumValue={FONT_SCALE_MAX}
-              step={0.01}
+              step={0.05}
               value={draftFontScale}
               onValueChange={setDraftFontScale}
               minimumTrackTintColor={colors.primary}

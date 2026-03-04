@@ -178,6 +178,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   termsLink: {
+    fontSize: 10,
     textDecorationLine: 'underline',
     color: '#9ca3af',
   },

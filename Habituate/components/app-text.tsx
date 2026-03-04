@@ -1,24 +1,19 @@
 import React from 'react';
-import { StyleProp, Text, TextProps, TextStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, TextProps, TextStyle } from 'react-native';
 
 import { useAppSettings } from '@/context/settings-context';
 
-function scaleStyle(style: StyleProp<TextStyle>, factor: number): StyleProp<TextStyle> {
-  if (!style) return style;
+const DEFAULT_FONT_SIZE = 14;
 
-  if (Array.isArray(style)) {
-    return style.map((entry) => scaleStyle(entry as StyleProp<TextStyle>, factor));
-  }
+function scaleStyle(style: StyleProp<TextStyle>, factor: number): TextStyle {
+  const flat = StyleSheet.flatten(style) ?? {};
+  const fontSize = typeof flat.fontSize === 'number' ? flat.fontSize : DEFAULT_FONT_SIZE;
+  const lineHeight = typeof flat.lineHeight === 'number' ? flat.lineHeight * factor : undefined;
 
-  if (typeof style !== 'object') {
-    return style;
-  }
-
-  const typed = style as TextStyle;
   return {
-    ...typed,
-    fontSize: typeof typed.fontSize === 'number' ? typed.fontSize * factor : typed.fontSize,
-    lineHeight: typeof typed.lineHeight === 'number' ? typed.lineHeight * factor : typed.lineHeight,
+    ...flat,
+    fontSize: fontSize * factor,
+    lineHeight,
   };
 }
 

@@ -15,8 +15,8 @@ type SettingsContextValue = {
   colorScheme: AppColorScheme;
 };
 
-const FONT_SCALE_MIN = 0.85;
-const FONT_SCALE_MAX = 1.35;
+const FONT_SCALE_MIN = 0.50;
+const FONT_SCALE_MAX = 2.0;
 
 const clamp = (value: number) => Math.max(FONT_SCALE_MIN, Math.min(FONT_SCALE_MAX, value));
 
