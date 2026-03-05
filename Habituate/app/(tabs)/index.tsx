@@ -38,7 +38,7 @@ export default function HomeScreen() {
 
   const chart = useMemo(() => {
     const width = chartContainerWidth;
-    const height = Math.max(130, width * 0.45);
+    const height = Math.max(130, width * 0.20);
     const padding = 8;
     const maxY = 20;
     const minY = 0;
