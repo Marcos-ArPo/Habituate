@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { Ionicons } from '@expo/vector-icons';
+import { AppText } from '@/components/app-text';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type Point = { x: number; y: number };
 
@@ -17,6 +20,8 @@ function buildLinePath(points: Point[]) {
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const days = useMemo(
     () => ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
     []
@@ -24,10 +29,16 @@ export default function HomeScreen() {
 
   const data = useMemo(() => [1, 4, 3, 6, 10, 8, 18], []);
   const yTicks = useMemo(() => [0, 5, 10, 15, 20], []);
+  const [chartContainerWidth, setChartContainerWidth] = useState(260);
+
+  const onChartLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0) setChartContainerWidth(w);
+  };
 
   const chart = useMemo(() => {
-    const width = 260;
-    const height = 130;
+    const width = chartContainerWidth;
+    const height = Math.max(130, width * 0.20);
     const padding = 8;
     const maxY = 20;
     const minY = 0;
@@ -55,7 +66,7 @@ export default function HomeScreen() {
       plotW,
       plotH,
     };
-  }, [data]);
+  }, [data, chartContainerWidth]);
 
   const completed = useMemo(
     () => [
@@ -68,31 +79,31 @@ export default function HomeScreen() {
   );
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide}>
-          <Ionicons name="person-outline" size={18} color="#111" />
+          <Ionicons name="person-outline" size={18} color={colors.text} />
         </View>
-        <Text style={styles.headerTitle}>Logros</Text>
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Logros</AppText>
         <View style={styles.headerSide} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Hábitos completados</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          <AppText style={[styles.cardTitle, { color: colors.text }]}>Hábitos completados</AppText>
           <View style={styles.chartRow}>
             <View style={styles.yAxis}>
               {yTicks
                 .slice()
                 .reverse()
                 .map((t) => (
-                  <Text key={t} style={styles.yAxisLabel}>
+                  <AppText key={t} style={[styles.yAxisLabel, { color: colors.mutedText }]}>
                     {t}
-                  </Text>
+                  </AppText>
                 ))}
             </View>
-            <View style={styles.chartArea}>
-              <Svg width={chart.width} height={chart.height}>
+            <View style={styles.chartArea} onLayout={onChartLayout}>
+              <Svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`}>
                 {yTicks.map((t) => {
                   const tY = t / 20;
                   const y = chart.padding + (1 - tY) * chart.plotH;
@@ -103,35 +114,35 @@ export default function HomeScreen() {
                       x2={chart.padding + chart.plotW}
                       y1={y}
                       y2={y}
-                      stroke="#eef2f7"
+                      stroke={colors.border}
                       strokeWidth={1}
                     />
                   );
                 })}
-                <Path d={chart.path} stroke="#2f6bff" strokeWidth={2.5} fill="none" />
+                <Path d={chart.path} stroke={colors.accent} strokeWidth={2.5} fill="none" />
                 {chart.last ? (
-                  <Circle cx={chart.last.x} cy={chart.last.y} r={4} fill="#2f6bff" />
+                  <Circle cx={chart.last.x} cy={chart.last.y} r={4} fill={colors.accent} />
                 ) : null}
               </Svg>
 
               <View style={styles.xAxis}>
                 {days.map((d) => (
-                  <Text key={d} style={styles.xAxisLabel}>
+                  <AppText key={d} style={[styles.xAxisLabel, { color: colors.mutedText }]}>
                     {d}
-                  </Text>
+                  </AppText>
                 ))}
               </View>
             </View>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Habitos Completados</Text>
-        <View style={styles.listCard}>
+        <AppText style={[styles.sectionTitle, { color: colors.text }]}>Habitos Completados</AppText>
+        <View style={[styles.listCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
           {completed.map((item) => (
             <View key={item.name} style={styles.row}>
-              <Text style={styles.rowName}>{item.name}</Text>
-              <Text style={styles.rowTime}>{item.time}</Text>
-              <Text style={styles.rowScore}>{item.score}</Text>
+              <AppText style={[styles.rowName, { color: colors.text }]}>{item.name}</AppText>
+              <AppText style={[styles.rowTime, { color: colors.mutedText }]}>{item.time}</AppText>
+              <AppText style={[styles.rowScore, { color: colors.mutedText }]}>{item.score}</AppText>
             </View>
           ))}
         </View>
@@ -143,7 +154,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   header: {
     paddingTop: 14,
@@ -172,10 +182,8 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderColor: '#eef2f7',
     borderRadius: 10,
     padding: 12,
-    backgroundColor: '#ffffff',
   },
   cardTitle: {
     fontSize: 12,
@@ -220,10 +228,8 @@ const styles = StyleSheet.create({
   },
   listCard: {
     borderWidth: 1,
-    borderColor: '#eef2f7',
     borderRadius: 10,
     paddingVertical: 6,
-    backgroundColor: '#ffffff',
   },
   row: {
     flexDirection: 'row',
