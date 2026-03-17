@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,14 +14,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/app-text';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useRouter } from 'expo-router';
+import { useUser } from '@/context/user-context';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const { registerUser } = useUser();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
 
@@ -28,9 +37,64 @@ export default function RegisterScreen() {
     return (
       name.trim().length === 0 ||
       email.trim().length === 0 ||
-      password.trim().length === 0
+      password.trim().length === 0 ||
+      isSubmitting
     );
-  }, [name, email, password]);
+  }, [name, email, password, isSubmitting]);
+
+  function handleEmailBlur() {
+    const v = email.trim();
+    if (v.length > 0 && !EMAIL_REGEX.test(v)) {
+      setEmailError('El correo debe contener @ y tener un formato válido.');
+    } else {
+      setEmailError('');
+    }
+  }
+
+  function handlePasswordBlur() {
+    if (password.trim().length > 0 && !PASSWORD_REGEX.test(password)) {
+      setPasswordError('La contraseña debe tener mayúsculas, minúsculas y números.');
+    } else {
+      setPasswordError('');
+    }
+  }
+
+  async function handleContinue() {
+    const emailVal = email.trim();
+    let hasError = false;
+
+    if (!EMAIL_REGEX.test(emailVal)) {
+      setEmailError('El correo debe contener @ y tener un formato válido.');
+      hasError = true;
+    } else {
+      setEmailError('');
+    }
+
+    if (!PASSWORD_REGEX.test(password)) {
+      setPasswordError('La contraseña debe tener mayúsculas, minúsculas y números.');
+      hasError = true;
+    } else {
+      setPasswordError('');
+    }
+
+    if (hasError) return;
+
+    setIsSubmitting(true);
+    const result = await registerUser(name.trim(), emailVal, password);
+    setIsSubmitting(false);
+
+    if (result === 'already_exists') {
+      setEmailError('Este correo ya está registrado.');
+      return;
+    }
+
+    if (result === 'error') {
+      Alert.alert('Error', 'No se pudo crear la cuenta. Inténtalo de nuevo.');
+      return;
+    }
+
+    router.replace('/setup-phones');
+  }
 
   return (
     <View
@@ -67,34 +131,45 @@ export default function RegisterScreen() {
               placeholderTextColor={colors.mutedText}
             />
 
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Correo electrónico"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              autoComplete="email"
-              returnKeyType="next"
-              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholderTextColor={colors.mutedText}
-            />
+            <View>
+              <TextInput
+                value={email}
+                onChangeText={(v) => { setEmail(v); setEmailError(''); }}
+                onBlur={handleEmailBlur}
+                placeholder="Correo electrónico"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                autoComplete="email"
+                returnKeyType="next"
+                style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: emailError ? '#ef4444' : colors.border, color: colors.text }]}
+                placeholderTextColor={colors.mutedText}
+              />
+              {emailError ? <AppText style={styles.errorText}>{emailError}</AppText> : null}
+            </View>
 
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Contraseña"
-              secureTextEntry
-              textContentType="newPassword"
-              autoComplete="new-password"
-              returnKeyType="done"
-              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholderTextColor={colors.mutedText}
-            />
+            <View>
+              <TextInput
+                value={password}
+                onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
+                onBlur={handlePasswordBlur}
+                placeholder="Contraseña"
+                secureTextEntry
+                textContentType="newPassword"
+                autoComplete="new-password"
+                returnKeyType="done"
+                style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: passwordError ? '#ef4444' : colors.border, color: colors.text }]}
+                placeholderTextColor={colors.mutedText}
+              />
+              {passwordError ? <AppText style={styles.errorText}>{passwordError}</AppText> : null}
+              <AppText style={[styles.passwordHint, { color: colors.mutedText }]}>
+                Debe incluir mayúsculas, minúsculas y al menos un número.
+              </AppText>
+            </View>
 
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.replace('/(tabs)')}
+              onPress={handleContinue}
               disabled={isDisabled}
               style={({ pressed }) => [
                 styles.button,
@@ -190,6 +265,18 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#ef4444',
+    marginTop: 4,
+    marginLeft: 2,
+  },
+  passwordHint: {
+    fontSize: 10,
+    marginTop: 4,
+    marginLeft: 2,
+    lineHeight: 14,
   },
   loginContainer: {
     marginTop: 20,

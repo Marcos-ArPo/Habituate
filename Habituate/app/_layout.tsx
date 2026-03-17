@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { SettingsProvider, useAppSettings } from '@/context/settings-context';
+import { UserProvider } from '@/context/user-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -13,7 +14,9 @@ export const unstable_settings = {
 export default function RootLayout() {
   return (
     <SettingsProvider>
-      <RootNavigator />
+      <UserProvider>
+        <RootNavigator />
+      </UserProvider>
     </SettingsProvider>
   );
 }
@@ -27,6 +30,7 @@ function RootNavigator() {
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
+        <Stack.Screen name="setup-phones" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>

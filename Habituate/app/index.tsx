@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,19 +14,91 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/app-text';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useRouter } from 'expo-router';
+import { useUser } from '@/context/user-context';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const { loginUser, isHydrated, currentUser } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
 
   const isDisabled = useMemo(() => {
-    return email.trim().length === 0 || password.trim().length === 0;
-  }, [email, password]);
+    return !isHydrated || isSubmitting || email.trim().length === 0 || password.trim().length === 0;
+  }, [email, isHydrated, isSubmitting, password]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!currentUser) return;
+
+    router.replace('/(tabs)');
+  }, [currentUser, isHydrated, router]);
+
+  function handleEmailBlur() {
+    if (email.trim().length > 0 && !EMAIL_REGEX.test(email.trim())) {
+      setEmailError('El correo debe contener @ y tener un formato válido.');
+    } else {
+      setEmailError('');
+    }
+  }
+
+  function handlePasswordBlur() {
+    if (password.trim().length > 0 && !PASSWORD_REGEX.test(password)) {
+      setPasswordError('La contraseña debe tener mayúsculas, minúsculas y números.');
+    } else {
+      setPasswordError('');
+    }
+  }
+
+  async function handleContinue() {
+    if (!isHydrated) {
+      return;
+    }
+
+    const emailVal = email.trim();
+    let hasError = false;
+
+    if (!EMAIL_REGEX.test(emailVal)) {
+      setEmailError('El correo debe contener @ y tener un formato válido.');
+      hasError = true;
+    } else {
+      setEmailError('');
+    }
+
+    if (!PASSWORD_REGEX.test(password)) {
+      setPasswordError('La contraseña debe tener mayúsculas, minúsculas y números.');
+      hasError = true;
+    } else {
+      setPasswordError('');
+    }
+
+    if (hasError) return;
+
+    setIsSubmitting(true);
+    const result = await loginUser(emailVal, password);
+    setIsSubmitting(false);
+
+    if (result === 'not_found') {
+      router.push('/register');
+      return;
+    }
+
+    if (result === 'invalid_credentials') {
+      setPasswordError('Credenciales incorrectas.');
+      return;
+    }
+
+    router.replace('/(tabs)');
+  }
 
   return (
     <View
@@ -45,39 +118,47 @@ export default function LoginScreen() {
           <AppText style={[styles.title, isWide && styles.titleWide, { color: colors.text }]}>Habituate</AppText>
 
           <AppText style={[styles.subtitle, isWide && styles.subtitleWide, { color: colors.text }]}>Accede a tu cuenta</AppText>
-          <AppText style={[styles.description, isWide && styles.descriptionWide, { color: colors.mutedText }]}> 
+          <AppText style={[styles.description, isWide && styles.descriptionWide, { color: colors.mutedText }]}>
             Introduce tu correo electrónico para iniciar sesión en{`\n`}esta aplicación
           </AppText>
 
           <View style={[styles.form, isWide && styles.formWide]}>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Correo electrónico"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              autoComplete="email"
-              returnKeyType="next"
-              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholderTextColor={colors.mutedText}
-            />
+            <View>
+              <TextInput
+                value={email}
+                onChangeText={(v) => { setEmail(v); setEmailError(''); }}
+                onBlur={handleEmailBlur}
+                placeholder="Correo electrónico"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                autoComplete="email"
+                returnKeyType="next"
+                style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: emailError ? '#ef4444' : colors.border, color: colors.text }]}
+                placeholderTextColor={colors.mutedText}
+              />
+              {emailError ? <AppText style={styles.errorText}>{emailError}</AppText> : null}
+            </View>
 
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Contraseña"
-              secureTextEntry
-              textContentType="password"
-              autoComplete="password"
-              returnKeyType="done"
-              style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholderTextColor={colors.mutedText}
-            />
+            <View>
+              <TextInput
+                value={password}
+                onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
+                onBlur={handlePasswordBlur}
+                placeholder="Contraseña"
+                secureTextEntry
+                textContentType="password"
+                autoComplete="password"
+                returnKeyType="done"
+                style={[styles.input, isWide && styles.inputWide, { backgroundColor: colors.surface, borderColor: passwordError ? '#ef4444' : colors.border, color: colors.text }]}
+                placeholderTextColor={colors.mutedText}
+              />
+              {passwordError ? <AppText style={styles.errorText}>{passwordError}</AppText> : null}
+            </View>
 
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.replace('/(tabs)')}
+              onPress={handleContinue}
               disabled={isDisabled}
               style={({ pressed }) => [
                 styles.button,
@@ -208,6 +289,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textDecorationLine: 'underline',
     color: '#9ca3af',
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#ef4444',
+    marginTop: 4,
+    marginLeft: 2,
   },
   titleWide: {
     fontSize: 32,

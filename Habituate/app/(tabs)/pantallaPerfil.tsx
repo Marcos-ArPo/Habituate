@@ -2,9 +2,11 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { AppText } from '@/components/app-text';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { useUser } from '@/context/user-context';
 
 type ProfileFieldProps = {
   label: string;
@@ -40,6 +42,13 @@ function ProfileField({
 export default function PantallaPerfilScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const { currentUser, logoutUser } = useUser();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await logoutUser();
+    router.replace('/index');
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -53,14 +62,16 @@ export default function PantallaPerfilScreen() {
             <Ionicons name="person" size={22} color="#ffffff" />
           </View>
           <View style={styles.nameWrap}>
-            <AppText style={[styles.nameText, { color: colors.text }]}>Akinfenwa Miano Mwanga</AppText>
+            <AppText style={[styles.nameText, { color: colors.text }]}>
+              {currentUser?.name ?? 'Sin nombre'}
+            </AppText>
           </View>
           <Ionicons name="person-add-outline" size={16} color={colors.mutedText} />
         </View>
 
         <ProfileField
           label="Correo Electrónico"
-          value="akinimawang@gmail.es"
+          value={currentUser?.email ?? '—'}
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
@@ -77,7 +88,7 @@ export default function PantallaPerfilScreen() {
         />
         <ProfileField
           label="Número Preferencia"
-          value="+38 666 066 660"
+          value={currentUser?.preferencePhone || '—'}
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
@@ -85,14 +96,17 @@ export default function PantallaPerfilScreen() {
         />
         <ProfileField
           label="Número Urgencia"
-          value="911"
+          value={currentUser?.urgencyPhone || '—'}
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
           surfaceColor={colors.surface}
         />
 
-        <Pressable style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
+        <Pressable
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+          onPress={handleLogout}
+        >
           <AppText style={[styles.primaryButtonText, { color: colors.onPrimary }]}>Cerrar Sesión</AppText>
         </Pressable>
       </ScrollView>
