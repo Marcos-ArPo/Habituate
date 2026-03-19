@@ -17,7 +17,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
 
-  const isHomeActive = pathname === '/';
+  const isHomeActive = pathname === '/pantallaInicio';
   const isHabitosActive = pathname === '/habitosDia';
   const isPerfilActive = pathname === '/pantallaPerfil';
   const isEmergenciaActive = pathname === '/pantallaEmergencia';
@@ -33,7 +33,7 @@ export default function TabLayout() {
           tabBarStyle: { display: 'none' },
         }}>
         <Tabs.Screen
-          name="index"
+          name="pantallaInicio"
           options={{
             title: 'Home',
             tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
@@ -100,7 +100,7 @@ export default function TabLayout() {
         </Pressable>
         <Pressable
           style={styles.navItem}
-          onPress={() => router.push('/(tabs)')}
+          onPress={() => router.push('/(tabs)/pantallaInicio')}
         >
           <Ionicons
             name="home"

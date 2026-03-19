@@ -56,7 +56,7 @@ export default function SetupPhonesScreen() {
       return;
     }
 
-    router.replace('/(tabs)');
+    router.replace('/(tabs)/pantallaInicio');
   }
 
   return (

@@ -1,4 +1,15 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from 'firebase/auth';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+
+import { auth, db } from '@/services/firebase';
 
 export type User = {
   id: string;
@@ -6,10 +17,6 @@ export type User = {
   email: string;
   preferencePhone: string;
   urgencyPhone: string;
-};
-
-type StoredUser = User & {
-  password: string;
 };
 
 type UserContextValue = {
@@ -31,84 +38,188 @@ const UserContext = createContext<UserContextValue>({
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [users, setUsers] = useState<StoredUser[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  const value = useMemo<UserContextValue>(
-    () => ({
-      currentUser,
-      isHydrated: true,
-      registerUser: async (name, email, password) => {
-        try {
-          const normalizedEmail = email.trim().toLowerCase();
-          const exists = users.some((u) => u.email.toLowerCase() === normalizedEmail);
-          if (exists) return 'already_exists';
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setCurrentUser(null);
+        setIsHydrated(true);
+        return;
+      }
 
-          const newUser: StoredUser = {
-            id: normalizedEmail,
-            name,
-            email: normalizedEmail,
-            password,
+      try {
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const snapshot = await getDoc(userRef);
+
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setCurrentUser({
+            id: firebaseUser.uid,
+            name: String(data.name ?? firebaseUser.displayName ?? ''),
+            email: String(data.email ?? firebaseUser.email ?? ''),
+            preferencePhone: String(data.preferencePhone ?? ''),
+            urgencyPhone: String(data.urgencyPhone ?? ''),
+          });
+        } else {
+          const fallbackUser: User = {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName ?? '',
+            email: firebaseUser.email ?? '',
             preferencePhone: '',
             urgencyPhone: '',
           };
 
-          setUsers((prev) => [...prev, newUser]);
-          setCurrentUser({
-            id: newUser.id,
+          await setDoc(
+            userRef,
+            {
+              name: fallbackUser.name,
+              email: fallbackUser.email,
+              preferencePhone: fallbackUser.preferencePhone,
+              urgencyPhone: fallbackUser.urgencyPhone,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          setCurrentUser(fallbackUser);
+        }
+      } catch {
+        setCurrentUser({
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName ?? '',
+          email: firebaseUser.email ?? '',
+          preferencePhone: '',
+          urgencyPhone: '',
+        });
+      } finally {
+        setIsHydrated(true);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const value = useMemo<UserContextValue>(
+    () => ({
+      currentUser,
+      isHydrated,
+      registerUser: async (name, email, password) => {
+        try {
+          const normalizedEmail = email.trim().toLowerCase();
+          const trimmedName = name.trim();
+          const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+          await updateProfile(credential.user, { displayName: trimmedName });
+
+          const newUser: User = {
+            id: credential.user.uid,
+            name: trimmedName,
+            email: normalizedEmail,
+            preferencePhone: '',
+            urgencyPhone: '',
+          };
+
+          await setDoc(doc(db, 'users', credential.user.uid), {
             name: newUser.name,
             email: newUser.email,
             preferencePhone: newUser.preferencePhone,
             urgencyPhone: newUser.urgencyPhone,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
 
+          setCurrentUser(newUser);
+
           return 'ok';
-        } catch {
+        } catch (error) {
+          const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+          if (code === 'auth/email-already-in-use') return 'already_exists';
           return 'error';
         }
       },
       loginUser: async (email, password) => {
         const normalizedEmail = email.trim().toLowerCase();
-        const found = users.find((u) => u.email.toLowerCase() === normalizedEmail);
-        if (!found) return 'not_found';
-        if (found.password !== password) return 'invalid_credentials';
 
-        setCurrentUser({
-          id: found.id,
-          name: found.name,
-          email: found.email,
-          preferencePhone: found.preferencePhone,
-          urgencyPhone: found.urgencyPhone,
-        });
+        try {
+          // const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+          // if (!signInMethods.length) {
+          //   console.log("error en signInMethods > ", signInMethods);
+          //   return 'not_found'
+          // };
 
-        return 'ok';
+          const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+          const userRef = doc(db, 'users', credential.user.uid);
+          const snapshot = await getDoc(userRef);
+
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            setCurrentUser({
+              id: credential.user.uid,
+              name: String(data.name ?? credential.user.displayName ?? ''),
+              email: String(data.email ?? credential.user.email ?? normalizedEmail),
+              preferencePhone: String(data.preferencePhone ?? ''),
+              urgencyPhone: String(data.urgencyPhone ?? ''),
+            });
+          } else {
+            const fallbackUser: User = {
+              id: credential.user.uid,
+              name: credential.user.displayName ?? '',
+              email: credential.user.email ?? normalizedEmail,
+              preferencePhone: '',
+              urgencyPhone: '',
+            };
+
+            await setDoc(
+              userRef,
+              {
+                name: fallbackUser.name,
+                email: fallbackUser.email,
+                preferencePhone: fallbackUser.preferencePhone,
+                urgencyPhone: fallbackUser.urgencyPhone,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+
+            setCurrentUser(fallbackUser);
+          }
+
+          return 'ok';
+        } catch (error) {
+          // const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+          console.log("Login incorrecto > dentro del catch");
+
+          // if (code === 'auth/user-not-found') return 'not_found';
+          return 'invalid_credentials';
+        }
       },
       updateCurrentUser: async (data) => {
         if (!currentUser) return false;
+        if (!auth.currentUser) return false;
 
         const nextUser: User = { ...currentUser, ...data };
-        setCurrentUser(nextUser);
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === currentUser.id
-              ? {
-                  ...u,
-                  name: nextUser.name,
-                  email: nextUser.email,
-                  preferencePhone: nextUser.preferencePhone,
-                  urgencyPhone: nextUser.urgencyPhone,
-                }
-              : u
-          )
-        );
 
-        return true;
+        try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+            name: nextUser.name,
+            email: nextUser.email,
+            preferencePhone: nextUser.preferencePhone,
+            urgencyPhone: nextUser.urgencyPhone,
+            updatedAt: serverTimestamp(),
+          });
+          setCurrentUser(nextUser);
+          return true;
+        } catch {
+          return false;
+        }
       },
       logoutUser: async () => {
+        await signOut(auth);
         setCurrentUser(null);
       },
     }),
-    [currentUser, users]
+    [currentUser, isHydrated]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

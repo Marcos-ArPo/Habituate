@@ -40,7 +40,7 @@ export default function LoginScreen() {
     if (!isHydrated) return;
     if (!currentUser) return;
 
-    router.replace('/(tabs)');
+    router.replace('/(tabs)/pantallaInicio');
   }, [currentUser, isHydrated, router]);
 
   function handleEmailBlur() {
@@ -93,11 +93,11 @@ export default function LoginScreen() {
     }
 
     if (result === 'invalid_credentials') {
-      setPasswordError('Credenciales incorrectas.');
+      router.push('/register');
       return;
     }
 
-    router.replace('/(tabs)');
+    router.replace('/(tabs)/pantallaInicio');
   }
 
   return (

@@ -47,7 +47,7 @@ export default function PantallaPerfilScreen() {
 
   async function handleLogout() {
     await logoutUser();
-    router.replace('/index');
+    router.replace('/');
   }
 
   return (
