@@ -142,6 +142,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const normalizedEmail = email.trim().toLowerCase();
 
         try {
+          // FIXME: Sirve para verificar que el usuario existe en Auth, de momento no se utiliza.
           // const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
           // if (!signInMethods.length) {
           //   console.log("error en signInMethods > ", signInMethods);
@@ -187,10 +188,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
           return 'ok';
         } catch (error) {
-          // const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
-          console.log("Login incorrecto > dentro del catch");
+          const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
 
-          // if (code === 'auth/user-not-found') return 'not_found';
+          if (code === 'auth/user-not-found') return 'not_found';
           return 'invalid_credentials';
         }
       },
