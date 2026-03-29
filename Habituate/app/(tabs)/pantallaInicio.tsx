@@ -1,11 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/app-text';
+import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  buildDateId,
+  getCompletedHabitsByDate,
+  getUserDashboard,
+  getWeeklyHabitStats,
+  type HabitItem,
+  type WeeklyStat,
+} from '@/services/firestore-data';
 
 type Point = { x: number; y: number };
 
@@ -22,13 +31,73 @@ function buildLinePath(points: Point[]) {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
-  const days = useMemo(
-    () => ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
-    []
-  );
+  const { currentUser } = useUser();
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
+  const [completedHabits, setCompletedHabits] = useState<HabitItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const data = useMemo(() => [1, 4, 3, 6, 10, 8, 18], []);
-  const yTicks = useMemo(() => [0, 5, 10, 15, 20], []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadData() {
+      if (!currentUser?.id) {
+        setWeeklyStats([]);
+        setCompletedHabits([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const todayId = buildDateId();
+
+        const [stats, completed] = await Promise.all([
+          getWeeklyHabitStats(currentUser.id, 7),
+          getCompletedHabitsByDate(currentUser.id, todayId),
+          // Lectura de dashboard para mantener sincronizada la vista con el modelo.
+          getUserDashboard(currentUser.id),
+        ]);
+
+        if (cancelled) return;
+
+        setWeeklyStats(stats);
+        setCompletedHabits(completed);
+      } catch {
+        if (cancelled) return;
+        setWeeklyStats([]);
+        setCompletedHabits([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
+  const days = useMemo(() => {
+    if (weeklyStats.length === 0) return ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    return weeklyStats.map((item) => item.dayLabel);
+  }, [weeklyStats]);
+
+  const data = useMemo(() => {
+    if (weeklyStats.length === 0) return [0, 0, 0, 0, 0, 0, 0];
+    return weeklyStats.map((item) => item.habitosCompletados);
+  }, [weeklyStats]);
+
+  const maxChartValue = useMemo(() => {
+    const currentMax = Math.max(...data, 1);
+    return Math.max(5, Math.ceil(currentMax / 5) * 5);
+  }, [data]);
+
+  const yTicks = useMemo(() => {
+    const step = Math.max(1, Math.ceil(maxChartValue / 4));
+    return [0, step, step * 2, step * 3, step * 4];
+  }, [maxChartValue]);
+
   const [chartContainerWidth, setChartContainerWidth] = useState(260);
 
   const onChartLayout = (e: LayoutChangeEvent) => {
@@ -40,7 +109,7 @@ export default function HomeScreen() {
     const width = chartContainerWidth;
     const height = Math.max(130, width * 0.20);
     const padding = 8;
-    const maxY = 20;
+    const maxY = maxChartValue;
     const minY = 0;
 
     const plotW = width - padding * 2;
@@ -66,17 +135,7 @@ export default function HomeScreen() {
       plotW,
       plotH,
     };
-  }, [data, chartContainerWidth]);
-
-  const completed = useMemo(
-    () => [
-      { name: 'Tarea de Casa', time: '10:00 - 11:30', score: '+6' },
-      { name: 'Tarea de Deporte', time: '12:00 - 13:30', score: '+8' },
-      { name: 'Tarea de Salida', time: '13:45 - 15:30', score: '+2' },
-      { name: 'Tarea de Medicación', time: '21:00 - 21:30', score: '+9' },
-    ],
-    []
-  );
+  }, [data, chartContainerWidth, maxChartValue]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -105,7 +164,7 @@ export default function HomeScreen() {
             <View style={styles.chartArea} onLayout={onChartLayout}>
               <Svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`}>
                 {yTicks.map((t) => {
-                  const tY = t / 20;
+                  const tY = maxChartValue === 0 ? 0 : t / maxChartValue;
                   const y = chart.padding + (1 - tY) * chart.plotH;
                   return (
                     <Line
@@ -138,13 +197,27 @@ export default function HomeScreen() {
 
         <AppText style={[styles.sectionTitle, { color: colors.text }]}>Habitos Completados</AppText>
         <View style={[styles.listCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
-          {completed.map((item) => (
-            <View key={item.name} style={styles.row}>
-              <AppText style={[styles.rowName, { color: colors.text }]}>{item.name}</AppText>
-              <AppText style={[styles.rowTime, { color: colors.mutedText }]}>{item.time}</AppText>
-              <AppText style={[styles.rowScore, { color: colors.mutedText }]}>{item.score}</AppText>
+          {loading ? (
+            <View style={styles.row}>
+              <AppText style={[styles.rowName, { color: colors.mutedText }]}>Cargando datos...</AppText>
             </View>
-          ))}
+          ) : completedHabits.length === 0 ? (
+            <View style={styles.row}>
+              <AppText style={[styles.rowName, { color: colors.mutedText }]}>No hay hábitos completados hoy.</AppText>
+            </View>
+          ) : (
+            completedHabits.map((item) => (
+              <View key={item.id} style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>{item.nombre}</AppText>
+                <AppText style={[styles.rowTime, { color: colors.mutedText }]}>
+                  {item.horaRecordatorio ? `Hora ${item.horaRecordatorio}` : 'Sin hora'}
+                </AppText>
+                <AppText style={[styles.rowScore, { color: colors.mutedText }]}>
+                  {item.calificacion ? `+${item.calificacion}` : '--'}
+                </AppText>
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </View>

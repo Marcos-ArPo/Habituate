@@ -1,23 +1,31 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { updateEmail, updatePassword } from 'firebase/auth';
 
 import { AppText } from '@/components/app-text';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useUser } from '@/context/user-context';
+import { auth } from '@/services/firebase';
 
 type ProfileFieldProps = {
   label: string;
   value: string;
+  onChangeText: (text: string) => void;
   secure?: boolean;
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  editable?: boolean;
 };
 
 function ProfileField({
   label,
   value,
+  onChangeText,
   secure = false,
+  keyboardType = 'default',
+  editable = true,
   textColor,
   mutedColor,
   borderColor,
@@ -31,9 +39,18 @@ function ProfileField({
   return (
     <View style={styles.fieldBlock}>
       <AppText style={[styles.fieldLabel, { color: textColor }]}>{label}</AppText>
-      <View style={[styles.fieldInput, { borderColor, backgroundColor: surfaceColor }]}> 
-        <AppText style={[styles.fieldValue, { color: mutedColor }]}>{secure ? '••••••••••••••••' : value}</AppText>
-        <Ionicons name="pencil" size={14} color={textColor} />
+      <View style={[styles.fieldInput, { borderColor, backgroundColor: surfaceColor }]}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={secure}
+          autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
+          keyboardType={keyboardType}
+          editable={editable}
+          style={[styles.fieldValue, { color: mutedColor }]}
+          placeholderTextColor={mutedColor}
+        />
+        <Ionicons name="create-outline" size={14} color={textColor} />
       </View>
     </View>
   );
@@ -42,12 +59,106 @@ function ProfileField({
 export default function PantallaPerfilScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
-  const { currentUser, logoutUser } = useUser();
+  const { currentUser, logoutUser, updateCurrentUser } = useUser();
   const router = useRouter();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [preferencePhone, setPreferencePhone] = useState('');
+  const [urgencyPhone, setUrgencyPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setName(currentUser?.name ?? '');
+    setEmail(currentUser?.email ?? '');
+    setPreferencePhone(currentUser?.preferencePhone ?? '');
+    setUrgencyPhone(currentUser?.urgencyPhone ?? '');
+    setPassword('');
+  }, [currentUser]);
+
+  const hasChanges = useMemo(() => {
+    if (!currentUser) return false;
+
+    return (
+      name.trim() !== currentUser.name ||
+      email.trim() !== currentUser.email ||
+      preferencePhone.trim() !== currentUser.preferencePhone ||
+      urgencyPhone.trim() !== currentUser.urgencyPhone ||
+      password.trim().length > 0
+    );
+  }, [currentUser, email, name, password, preferencePhone, urgencyPhone]);
 
   async function handleLogout() {
     await logoutUser();
     router.replace('/');
+  }
+
+  async function handleSaveChanges() {
+    if (!currentUser) return;
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPreferencePhone = preferencePhone.trim();
+    const trimmedUrgencyPhone = urgencyPhone.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedName) {
+      Alert.alert('Dato inválido', 'El nombre no puede estar vacío.');
+      return;
+    }
+
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert('Dato inválido', 'Introduce un correo electrónico válido.');
+      return;
+    }
+
+    if (trimmedPassword && trimmedPassword.length < 6) {
+      Alert.alert('Dato inválido', 'La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      if (auth.currentUser && trimmedEmail !== (auth.currentUser.email ?? '').toLowerCase()) {
+        await updateEmail(auth.currentUser, trimmedEmail);
+      }
+
+      if (auth.currentUser && trimmedPassword) {
+        await updatePassword(auth.currentUser, trimmedPassword);
+      }
+
+      const updated = await updateCurrentUser({
+        name: trimmedName,
+        email: trimmedEmail,
+        preferencePhone: trimmedPreferencePhone,
+        urgencyPhone: trimmedUrgencyPhone,
+      });
+
+      if (!updated) {
+        Alert.alert('Error', 'No se pudieron guardar los cambios en Firestore.');
+        return;
+      }
+
+      setPassword('');
+      Alert.alert('Guardado', 'Tus cambios se han guardado correctamente.');
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error && 'code' in error ? String(error.code) : 'unknown';
+
+      if (code === 'auth/requires-recent-login') {
+        Alert.alert(
+          'Reautenticación requerida',
+          'Para cambiar correo o contraseña, vuelve a iniciar sesión e inténtalo de nuevo.'
+        );
+      } else if (code === 'auth/email-already-in-use') {
+        Alert.alert('Correo en uso', 'Ese correo ya está registrado en otra cuenta.');
+      } else {
+        Alert.alert('Error', 'No se pudieron guardar tus cambios.');
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -62,16 +173,26 @@ export default function PantallaPerfilScreen() {
             <Ionicons name="person" size={22} color="#ffffff" />
           </View>
           <View style={styles.nameWrap}>
-            <AppText style={[styles.nameText, { color: colors.text }]}>
-              {currentUser?.name ?? 'Sin nombre'}
-            </AppText>
+            <AppText style={[styles.nameText, { color: colors.text }]}>{name || 'Sin nombre'}</AppText>
           </View>
           <Ionicons name="person-add-outline" size={16} color={colors.mutedText} />
         </View>
 
         <ProfileField
+          label="Nombre"
+          value={name}
+          onChangeText={setName}
+          textColor={colors.text}
+          mutedColor={colors.mutedText}
+          borderColor={colors.border}
+          surfaceColor={colors.surface}
+        />
+
+        <ProfileField
           label="Correo Electrónico"
-          value={currentUser?.email ?? '—'}
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
@@ -79,7 +200,8 @@ export default function PantallaPerfilScreen() {
         />
         <ProfileField
           label="Contraseña"
-          value="••••••••"
+          value={password}
+          onChangeText={setPassword}
           secure
           textColor={colors.text}
           mutedColor={colors.mutedText}
@@ -88,7 +210,9 @@ export default function PantallaPerfilScreen() {
         />
         <ProfileField
           label="Número Preferencia"
-          value={currentUser?.preferencePhone || '—'}
+          value={preferencePhone}
+          onChangeText={setPreferencePhone}
+          keyboardType="phone-pad"
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
@@ -96,12 +220,28 @@ export default function PantallaPerfilScreen() {
         />
         <ProfileField
           label="Número Urgencia"
-          value={currentUser?.urgencyPhone || '—'}
+          value={urgencyPhone}
+          onChangeText={setUrgencyPhone}
+          keyboardType="phone-pad"
           textColor={colors.text}
           mutedColor={colors.mutedText}
           borderColor={colors.border}
           surfaceColor={colors.surface}
         />
+
+        <Pressable
+          style={[
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            (!hasChanges || isSaving) && styles.disabledButton,
+          ]}
+          onPress={handleSaveChanges}
+          disabled={!hasChanges || isSaving}
+        >
+          <AppText style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
+            {isSaving ? 'Guardando...' : 'Guardar cambios'}
+          </AppText>
+        </Pressable>
 
         <Pressable
           style={[styles.primaryButton, { backgroundColor: colors.primary }]}
@@ -194,5 +334,8 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.45,
   },
 });
