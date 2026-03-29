@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
-  fetchSignInMethodsForEmail,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -18,6 +17,55 @@ export type User = {
   preferencePhone: string;
   urgencyPhone: string;
 };
+
+function mapFirestoreUser(
+  uid: string,
+  data: Record<string, unknown>,
+  fallbackEmail = '',
+  fallbackName = ''
+): User {
+  return {
+    id: uid,
+    name: String(data.nombre ?? data.name ?? fallbackName),
+    email: String(data.email ?? fallbackEmail),
+    preferencePhone: String(data.telefono_preferencia ?? data.preferencePhone ?? ''),
+    urgencyPhone: String(data.telefono_urgencia ?? data.urgencyPhone ?? ''),
+  };
+}
+
+function buildFirestoreUserPayload(user: User) {
+  return {
+    nombre: user.name,
+    email: user.email,
+    telefono_preferencia: user.preferencePhone,
+    telefono_urgencia: user.urgencyPhone,
+    // Compatibilidad temporal por si hay pantallas antiguas leyendo campos previos.
+    preferencePhone: user.preferencePhone,
+    urgencyPhone: user.urgencyPhone,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function buildDefaultConfig() {
+  return {
+    config_modo_oscuro: false,
+    config_notificaciones: false,
+    config_sonido: true,
+    config_tamano_fuente: 1,
+    token_fcm: '',
+  };
+}
+
+function buildDefaultDashboard() {
+  return {
+    total_habitos_activos: 0,
+    total_tareas_pendientes: 0,
+    habitos_completados_hoy: 0,
+    tareas_completadas_hoy: 0,
+    racha_actual: 0,
+    ultima_actualizacion: serverTimestamp(),
+  };
+}
 
 type UserContextValue = {
   currentUser: User | null;
@@ -50,18 +98,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const userRef = doc(db, 'users', firebaseUser.uid);
+        const userRef = doc(db, 'usuarios', firebaseUser.uid);
         const snapshot = await getDoc(userRef);
 
         if (snapshot.exists()) {
           const data = snapshot.data();
-          setCurrentUser({
-            id: firebaseUser.uid,
-            name: String(data.name ?? firebaseUser.displayName ?? ''),
-            email: String(data.email ?? firebaseUser.email ?? ''),
-            preferencePhone: String(data.preferencePhone ?? ''),
-            urgencyPhone: String(data.urgencyPhone ?? ''),
-          });
+          setCurrentUser(
+            mapFirestoreUser(firebaseUser.uid, data, firebaseUser.email ?? '', firebaseUser.displayName ?? '')
+          );
         } else {
           const fallbackUser: User = {
             id: firebaseUser.uid,
@@ -74,11 +118,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           await setDoc(
             userRef,
             {
-              name: fallbackUser.name,
-              email: fallbackUser.email,
-              preferencePhone: fallbackUser.preferencePhone,
-              urgencyPhone: fallbackUser.urgencyPhone,
-              updatedAt: serverTimestamp(),
+              ...buildFirestoreUserPayload(fallbackUser),
+              ...buildDefaultConfig(),
+              fecha_registro: serverTimestamp(),
+              avatar_url: '',
+              dashboard: buildDefaultDashboard(),
             },
             { merge: true }
           );
@@ -120,13 +164,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             urgencyPhone: '',
           };
 
-          await setDoc(doc(db, 'users', credential.user.uid), {
-            name: newUser.name,
-            email: newUser.email,
-            preferencePhone: newUser.preferencePhone,
-            urgencyPhone: newUser.urgencyPhone,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+          await setDoc(doc(db, 'usuarios', credential.user.uid), {
+            ...buildFirestoreUserPayload(newUser),
+            ...buildDefaultConfig(),
+            fecha_registro: serverTimestamp(),
+            avatar_url: '',
+            dashboard: buildDefaultDashboard(),
           });
 
           setCurrentUser(newUser);
@@ -142,26 +185,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const normalizedEmail = email.trim().toLowerCase();
 
         try {
-          // FIXME: Sirve para verificar que el usuario existe en Auth, de momento no se utiliza.
-          // const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
-          // if (!signInMethods.length) {
-          //   console.log("error en signInMethods > ", signInMethods);
-          //   return 'not_found'
-          // };
-
           const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-          const userRef = doc(db, 'users', credential.user.uid);
+          const userRef = doc(db, 'usuarios', credential.user.uid);
           const snapshot = await getDoc(userRef);
 
           if (snapshot.exists()) {
             const data = snapshot.data();
-            setCurrentUser({
-              id: credential.user.uid,
-              name: String(data.name ?? credential.user.displayName ?? ''),
-              email: String(data.email ?? credential.user.email ?? normalizedEmail),
-              preferencePhone: String(data.preferencePhone ?? ''),
-              urgencyPhone: String(data.urgencyPhone ?? ''),
-            });
+            setCurrentUser(
+              mapFirestoreUser(
+                credential.user.uid,
+                data,
+                credential.user.email ?? normalizedEmail,
+                credential.user.displayName ?? ''
+              )
+            );
           } else {
             const fallbackUser: User = {
               id: credential.user.uid,
@@ -174,11 +211,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             await setDoc(
               userRef,
               {
-                name: fallbackUser.name,
-                email: fallbackUser.email,
-                preferencePhone: fallbackUser.preferencePhone,
-                urgencyPhone: fallbackUser.urgencyPhone,
-                updatedAt: serverTimestamp(),
+                ...buildFirestoreUserPayload(fallbackUser),
+                ...buildDefaultConfig(),
+                fecha_registro: serverTimestamp(),
+                avatar_url: '',
+                dashboard: buildDefaultDashboard(),
               },
               { merge: true }
             );
@@ -201,13 +238,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const nextUser: User = { ...currentUser, ...data };
 
         try {
-          await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-            name: nextUser.name,
-            email: nextUser.email,
-            preferencePhone: nextUser.preferencePhone,
-            urgencyPhone: nextUser.urgencyPhone,
-            updatedAt: serverTimestamp(),
-          });
+          await updateDoc(doc(db, 'usuarios', auth.currentUser.uid), buildFirestoreUserPayload(nextUser));
           setCurrentUser(nextUser);
           return true;
         } catch {

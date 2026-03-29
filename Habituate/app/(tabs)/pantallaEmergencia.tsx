@@ -1,14 +1,34 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function PantallaEmergenciaScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const { currentUser } = useUser();
+
+  async function callPhone(phone: string, type: 'urgencia' | 'preferente') {
+    if (!phone) {
+      Alert.alert('Sin numero', `No hay numero de ${type} configurado en tu perfil.`);
+      return;
+    }
+
+    const normalized = phone.replace(/\s+/g, '');
+    const telUrl = `tel:${normalized}`;
+    const canOpen = await Linking.canOpenURL(telUrl);
+
+    if (!canOpen) {
+      Alert.alert('No disponible', 'Este dispositivo no permite iniciar llamadas.');
+      return;
+    }
+
+    await Linking.openURL(telUrl);
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.elevated }]}> 
@@ -21,8 +41,12 @@ export default function PantallaEmergenciaScreen() {
           <View style={styles.iconWrap}>
             <Ionicons name="business-outline" size={22} color={colors.text} />
           </View>
-          <Pressable style={[styles.actionButton, { backgroundColor: colors.primary }]}>
-            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Llamada de Emergencia</AppText>
+          <Pressable
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={() => callPhone(currentUser?.urgencyPhone ?? '', 'urgencia')}>
+            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>
+              Llamada de Emergencia {currentUser?.urgencyPhone ? `(${currentUser.urgencyPhone})` : ''}
+            </AppText>
           </Pressable>
         </View>
 
@@ -30,8 +54,12 @@ export default function PantallaEmergenciaScreen() {
           <View style={styles.iconWrap}>
             <Ionicons name="accessibility-outline" size={22} color={colors.text} />
           </View>
-          <Pressable style={[styles.actionButton, { backgroundColor: colors.primary }]}>
-            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Llamada Preferente</AppText>
+          <Pressable
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={() => callPhone(currentUser?.preferencePhone ?? '', 'preferente')}>
+            <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>
+              Llamada Preferente {currentUser?.preferencePhone ? `(${currentUser.preferencePhone})` : ''}
+            </AppText>
           </Pressable>
         </View>
       </ScrollView>

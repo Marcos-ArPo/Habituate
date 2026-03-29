@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import Slider from '@react-native-community/slider';
+import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 import { AppText } from '@/components/app-text';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, useAppSettings } from '@/context/settings-context';
+import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { db } from '@/services/firebase';
 
 type RowProps = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -37,6 +40,7 @@ function SettingRow({ icon, title, subtitle, right, colors }: RowProps) {
 export default function PantallaAjustesScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const { currentUser } = useUser();
   const {
     fontScale,
     setFontScale,
@@ -52,6 +56,8 @@ export default function PantallaAjustesScreen() {
   const [draftDarkModeEnabled, setDraftDarkModeEnabled] = useState(darkModeEnabled);
   const [draftSoundEnabled, setDraftSoundEnabled] = useState(soundEnabled);
   const [draftReminderEnabled, setDraftReminderEnabled] = useState(reminderEnabled);
+  const [isLoadingRemote, setIsLoadingRemote] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setDraftFontScale(fontScale);
@@ -59,6 +65,62 @@ export default function PantallaAjustesScreen() {
     setDraftSoundEnabled(soundEnabled);
     setDraftReminderEnabled(reminderEnabled);
   }, [darkModeEnabled, fontScale, reminderEnabled, soundEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRemoteSettings() {
+      if (!currentUser?.id) {
+        setIsLoadingRemote(false);
+        return;
+      }
+
+      try {
+        setIsLoadingRemote(true);
+        const snapshot = await getDoc(doc(db, 'usuarios', currentUser.id));
+        if (!snapshot.exists() || cancelled) return;
+
+        const data = snapshot.data();
+        const remoteFontScale =
+          typeof data.config_tamano_fuente === 'number' ? Number(data.config_tamano_fuente) : fontScale;
+        const remoteDarkMode =
+          typeof data.config_modo_oscuro === 'boolean' ? data.config_modo_oscuro : darkModeEnabled;
+        const remoteSound =
+          typeof data.config_sonido === 'boolean' ? data.config_sonido : soundEnabled;
+        const remoteReminder =
+          typeof data.config_notificaciones === 'boolean'
+            ? data.config_notificaciones
+            : reminderEnabled;
+
+        setFontScale(remoteFontScale);
+        setDarkModeEnabled(remoteDarkMode);
+        setSoundEnabled(remoteSound);
+        setReminderEnabled(remoteReminder);
+      } catch {
+        if (!cancelled) {
+          Alert.alert('Aviso', 'No se pudieron cargar los ajustes guardados.');
+        }
+      } finally {
+        if (!cancelled) setIsLoadingRemote(false);
+      }
+    }
+
+    loadRemoteSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentUser?.id,
+    darkModeEnabled,
+    fontScale,
+    reminderEnabled,
+    setDarkModeEnabled,
+    setFontScale,
+    setReminderEnabled,
+    setSoundEnabled,
+    soundEnabled,
+  ]);
 
   const hasPendingChanges = useMemo(
     () =>
@@ -78,11 +140,32 @@ export default function PantallaAjustesScreen() {
     ]
   );
 
-  const applyChanges = () => {
-    setFontScale(draftFontScale);
-    setDarkModeEnabled(draftDarkModeEnabled);
-    setSoundEnabled(draftSoundEnabled);
-    setReminderEnabled(draftReminderEnabled);
+  const applyChanges = async () => {
+    if (!currentUser?.id) {
+      Alert.alert('Sin sesion', 'Debes iniciar sesion para guardar tus ajustes.');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      await updateDoc(doc(db, 'usuarios', currentUser.id), {
+        config_tamano_fuente: draftFontScale,
+        config_modo_oscuro: draftDarkModeEnabled,
+        config_sonido: draftSoundEnabled,
+        config_notificaciones: draftReminderEnabled,
+        updatedAt: serverTimestamp(),
+      });
+
+      setFontScale(draftFontScale);
+      setDarkModeEnabled(draftDarkModeEnabled);
+      setSoundEnabled(draftSoundEnabled);
+      setReminderEnabled(draftReminderEnabled);
+    } catch {
+      Alert.alert('Error', 'No se pudieron guardar los ajustes en Firestore.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const fontLabel = `${Math.round(draftFontScale * 100)}%`;
@@ -119,7 +202,7 @@ export default function PantallaAjustesScreen() {
         <SettingRow
           icon="sunny-outline"
           title="Modo oscuro"
-          subtitle={darkModeEnabled ? 'Activado' : 'Desactivado'}
+          subtitle={draftDarkModeEnabled ? 'Activado' : 'Desactivado'}
           colors={colors}
           right={
             <Switch
@@ -172,11 +255,13 @@ export default function PantallaAjustesScreen() {
           style={[
             styles.saveButton,
             { backgroundColor: colors.primary },
-            !hasPendingChanges && styles.saveButtonDisabled,
+            (!hasPendingChanges || isLoadingRemote || isSaving) && styles.saveButtonDisabled,
           ]}
           onPress={applyChanges}
-          disabled={!hasPendingChanges}>
-          <AppText style={[styles.saveButtonText, { color: colors.onPrimary }]}>Confirmar cambios</AppText>
+          disabled={!hasPendingChanges || isLoadingRemote || isSaving}>
+          <AppText style={[styles.saveButtonText, { color: colors.onPrimary }]}>
+            {isSaving ? 'Guardando...' : 'Confirmar cambios'}
+          </AppText>
         </Pressable>
       </View>
     </View>
