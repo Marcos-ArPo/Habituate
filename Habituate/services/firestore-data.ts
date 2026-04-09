@@ -24,6 +24,7 @@ export type WeeklyStat = {
   dateId: string;
   dayLabel: string;
   habitosCompletados: number;
+  tareasCompletadas: number;
 };
 
 export type HabitItem = {
@@ -97,6 +98,7 @@ export async function getWeeklyHabitStats(uid: string, days = 7): Promise<Weekly
         dateId: item.id,
         dayLabel: getDayLabelFromDateId(item.id),
         habitosCompletados: Number(data.habitos_completados ?? 0),
+        tareasCompletadas: Number(data.tareas_completadas ?? 0),
       };
     })
     .reverse();

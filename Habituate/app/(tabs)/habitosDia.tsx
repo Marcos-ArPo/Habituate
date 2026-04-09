@@ -1,23 +1,67 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+  type Timestamp,
+} from 'firebase/firestore';
+
 import { AppText } from '@/components/app-text';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useUser } from '@/context/user-context';
-import { buildDateId, getHabitsByDate, type HabitItem } from '@/services/firestore-data';
+import { buildDateId } from '@/services/firestore-data';
+import { db } from '@/services/firebase';
 
 type DayOption = {
   label: string;
   offset: number;
 };
 
-const ICON_BY_KEY: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
-  home: 'home',
-  bicycle: 'bicycle',
-  medical: 'medical',
-  people: 'people',
-  water: 'water',
+type TaskItem = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  fechaVencimiento: Date | null;
+  prioridad: number;
+};
+
+function toDateFromTimestamp(value: unknown): Date | null {
+  if (!value || typeof value !== 'object') return null;
+  const maybeTimestamp = value as Timestamp;
+  if (typeof maybeTimestamp.toDate !== 'function') return null;
+  return maybeTimestamp.toDate();
+}
+
+function sameDateAsOffset(date: Date | null, offset: number) {
+  if (!date) return offset === 0;
+  const selected = new Date();
+  selected.setHours(0, 0, 0, 0);
+  selected.setDate(selected.getDate() + offset);
+
+  const due = new Date(date);
+  due.setHours(0, 0, 0, 0);
+
+  return selected.getTime() === due.getTime();
+}
+
+function formatDateTime(date: Date | null) {
+  if (!date) return 'Sin fecha de vencimiento';
+
+  return date.toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 export default function HabitosDiaScreen() {
@@ -25,8 +69,11 @@ export default function HabitosDiaScreen() {
   const { colors } = useAppTheme();
   const { currentUser } = useUser();
   const [selectedDay, setSelectedDay] = useState('Hoy');
-  const [habits, setHabits] = useState<HabitItem[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
+
   const days = useMemo<DayOption[]>(
     () => [
       { label: 'Hoy', offset: 0 },
@@ -43,47 +90,165 @@ export default function HabitosDiaScreen() {
   );
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadHabits() {
-      if (!currentUser?.id) {
-        setHabits([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const dateId = buildDateId(selectedOffset);
-        const response = await getHabitsByDate(currentUser.id, dateId);
-        if (cancelled) return;
-        setHabits(response);
-      } catch {
-        if (cancelled) return;
-        setHabits([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    if (!currentUser?.id) {
+      setTasks([]);
+      setLoading(false);
+      return;
     }
 
-    loadHabits();
+    setLoading(true);
+    const tasksRef = collection(db, 'usuarios', currentUser.id, 'tareas');
+    const tasksQuery = query(tasksRef, where('completada', '==', false));
+
+    const unsubscribe = onSnapshot(
+      tasksQuery,
+      (snapshots) => {
+        const mapped = snapshots.docs
+          .map((item) => {
+            const data = item.data();
+            return {
+              id: item.id,
+              titulo: String(data.titulo ?? 'Sin titulo'),
+              descripcion: String(data.descripcion ?? ''),
+              fechaVencimiento: toDateFromTimestamp(data.fecha_vencimiento),
+              prioridad: Number(data.prioridad ?? 1),
+            };
+          })
+          .filter((task) => sameDateAsOffset(task.fechaVencimiento, selectedOffset))
+          .sort((a, b) => {
+            const aTime = a.fechaVencimiento?.getTime() ?? 0;
+            const bTime = b.fechaVencimiento?.getTime() ?? 0;
+            return aTime - bTime;
+          });
+
+        setTasks(mapped);
+        setLoading(false);
+      },
+      () => {
+        setTasks([]);
+        setLoading(false);
+      }
+    );
 
     return () => {
-      cancelled = true;
+      unsubscribe();
     };
   }, [currentUser?.id, selectedOffset]);
 
-  const habitsLabel = useMemo(() => {
-    if (loading) return 'Cargando hábitos...';
-    if (habits.length === 0) return 'No hay hábitos activos para esta fecha.';
+  const tasksLabel = useMemo(() => {
+    if (loading) return 'Cargando tareas...';
+    if (tasks.length === 0) return 'No hay tareas pendientes para esta fecha.';
     return '';
-  }, [habits.length, loading]);
+  }, [loading, tasks.length]);
+
+  async function completeTask(task: TaskItem) {
+    if (!currentUser?.id) return;
+
+    try {
+      setIsCompleting(true);
+
+      await runTransaction(db, async (transaction) => {
+        const todayId = buildDateId(0);
+        const yesterdayId = buildDateId(-1);
+
+        const userRef = doc(db, 'usuarios', currentUser.id);
+        const taskRef = doc(db, 'usuarios', currentUser.id, 'tareas', task.id);
+        const todayStatsRef = doc(db, 'usuarios', currentUser.id, 'estadisticas', todayId);
+        const yesterdayStatsRef = doc(db, 'usuarios', currentUser.id, 'estadisticas', yesterdayId);
+
+        const [userSnap, taskSnap, todayStatsSnap, yesterdayStatsSnap] = await Promise.all([
+          transaction.get(userRef),
+          transaction.get(taskRef),
+          transaction.get(todayStatsRef),
+          transaction.get(yesterdayStatsRef),
+        ]);
+
+        if (!taskSnap.exists()) {
+          throw new Error('task-not-found');
+        }
+
+        const taskData = taskSnap.data();
+        if (Boolean(taskData.completada)) {
+          return;
+        }
+
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+
+        const todayStats = todayStatsSnap.exists() ? todayStatsSnap.data() : {};
+        const yesterdayStats = yesterdayStatsSnap.exists() ? yesterdayStatsSnap.data() : {};
+
+        const todayHabits = Number(todayStats.habitos_completados ?? 0);
+        const todayTasks = Number(todayStats.tareas_completadas ?? 0);
+        const yesterdayHabits = Number(yesterdayStats.habitos_completados ?? 0);
+        const yesterdayTasks = Number(yesterdayStats.tareas_completadas ?? 0);
+
+        const todayTotalBefore = todayHabits + todayTasks;
+        const yesterdayTotal = yesterdayHabits + yesterdayTasks;
+
+        const currentRacha = Number(dashboard.racha_actual ?? 0);
+        const currentRachaMax = Number(todayStats.racha_maxima ?? currentRacha);
+
+        let nextRacha = currentRacha;
+        if (todayTotalBefore === 0) {
+          nextRacha = yesterdayTotal > 0 ? Math.max(1, currentRacha + 1) : 1;
+        }
+
+        const nextRachaMax = Math.max(currentRachaMax, nextRacha);
+
+        const currentPendingTasks = Number(dashboard.total_tareas_pendientes ?? 0);
+        const currentCompletedToday = Number(
+          dashboard.tareas_completadas_hoy ?? dashboard.tareas_completados_hoy ?? 0
+        );
+
+        transaction.update(taskRef, {
+          completada: true,
+          actualizado_en: serverTimestamp(),
+        });
+
+        transaction.set(
+          todayStatsRef,
+          {
+            fecha: todayId,
+            habitos_completados: todayHabits,
+            tareas_completadas: todayTasks + 1,
+            racha_actual: nextRacha,
+            racha_maxima: nextRachaMax,
+          },
+          { merge: true }
+        );
+
+        transaction.set(
+          userRef,
+          {
+            dashboard: {
+              ...dashboard,
+              total_tareas_pendientes: Math.max(0, currentPendingTasks - 1),
+              tareas_completadas_hoy: currentCompletedToday + 1,
+              // Compatibilidad por si existe typo en documentos previos.
+              tareas_completados_hoy: currentCompletedToday + 1,
+              racha_actual: nextRacha,
+              ultima_actualizacion: serverTimestamp(),
+            },
+          },
+          { merge: true }
+        );
+      });
+
+      setSelectedTask(null);
+      setTasks((prev) => prev.filter((item) => item.id !== task.id));
+    } catch {
+      Alert.alert('Error', 'No se pudo completar la tarea.');
+    } finally {
+      setIsCompleting(false);
+    }
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide} />
-        <AppText style={[styles.headerTitle, { color: colors.text }]}>Hábitos del Día</AppText>
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Tareas del Día</AppText>
         <View style={styles.headerSide} />
       </View>
 
@@ -112,47 +277,65 @@ export default function HabitosDiaScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {habitsLabel ? (
+        {tasksLabel ? (
           <View style={[styles.habitCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <AppText style={[styles.habitName, { color: colors.mutedText }]}>{habitsLabel}</AppText>
+            <AppText style={[styles.habitName, { color: colors.mutedText }]}>{tasksLabel}</AppText>
           </View>
         ) : (
-          habits.map((habit) => (
+          tasks.map((task) => (
             <View
-              key={habit.id}
+              key={task.id}
               style={[styles.habitCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.habitContent}>
                 <View style={[styles.iconContainer, { backgroundColor: colors.elevated }]}>
-                  <Ionicons
-                    name={ICON_BY_KEY[habit.icono] ?? 'checkmark-circle-outline'}
-                    size={24}
-                    color={colors.accent}
-                  />
+                  <Ionicons name="checkbox-outline" size={24} color={colors.accent} />
                 </View>
                 <View style={styles.habitInfo}>
-                  <AppText style={[styles.habitName, { color: colors.text }]}>{habit.nombre}</AppText>
+                  <AppText style={[styles.habitName, { color: colors.text }]}>{task.titulo}</AppText>
                   <AppText style={[styles.habitTime, { color: colors.mutedText }]}>
-                    {habit.horaRecordatorio ? `Hora ${habit.horaRecordatorio}` : 'Sin hora configurada'}
+                    {formatDateTime(task.fechaVencimiento)}
                   </AppText>
                 </View>
               </View>
-              <Pressable
-                style={[
-                  styles.markButton,
-                  { backgroundColor: habit.completado ? colors.elevated : colors.primary },
-                ]}>
-                <AppText
-                  style={[
-                    styles.markButtonText,
-                    { color: habit.completado ? colors.text : colors.onPrimary },
-                  ]}>
-                  {habit.completado ? 'Completado' : 'Pendiente'}
-                </AppText>
+              <Pressable style={[styles.markButton, { backgroundColor: colors.primary }]} onPress={() => setSelectedTask(task)}>
+                <AppText style={[styles.markButtonText, { color: colors.onPrimary }]}>Ver detalle</AppText>
               </Pressable>
             </View>
           ))
         )}
       </ScrollView>
+
+      <Modal visible={Boolean(selectedTask)} transparent animationType="fade" onRequestClose={() => setSelectedTask(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <AppText style={[styles.modalTitle, { color: colors.text }]}>{selectedTask?.titulo ?? ''}</AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Descripcion</AppText>
+            <AppText style={[styles.modalText, { color: colors.text }]}>
+              {selectedTask?.descripcion || 'Sin descripcion'}
+            </AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Fecha y hora</AppText>
+            <AppText style={[styles.modalText, { color: colors.text }]}>
+              {formatDateTime(selectedTask?.fechaVencimiento ?? null)}
+            </AppText>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, { borderColor: colors.border }]}
+                onPress={() => setSelectedTask(null)}>
+                <AppText style={[styles.modalButtonText, { color: colors.text }]}>Cerrar</AppText>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={() => selectedTask && completeTask(selectedTask)}
+                disabled={isCompleting}>
+                <AppText style={[styles.modalButtonText, { color: colors.onPrimary }]}>
+                  {isCompleting ? 'Completando...' : 'Completar tarea'}
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -255,5 +438,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  modalLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 6,
+    marginBottom: 3,
+  },
+  modalText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 14,
+    gap: 8,
+  },
+  modalButton: {
+    minHeight: 34,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  modalButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

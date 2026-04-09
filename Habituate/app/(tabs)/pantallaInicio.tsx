@@ -1,20 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
+import { useRouter } from 'expo-router';
+import { collection, doc, documentId, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import {
-  buildDateId,
-  getCompletedHabitsByDate,
-  getUserDashboard,
-  getWeeklyHabitStats,
-  type HabitItem,
-  type WeeklyStat,
-} from '@/services/firestore-data';
+import { type DashboardData, type WeeklyStat } from '@/services/firestore-data';
+import { db } from '@/services/firebase';
 
 type Point = { x: number; y: number };
 
@@ -31,50 +27,84 @@ function buildLinePath(points: Point[]) {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  const router = useRouter();
   const { currentUser } = useUser();
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
-  const [completedHabits, setCompletedHabits] = useState<HabitItem[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardData>({
+    totalHabitosActivos: 0,
+    totalTareasPendientes: 0,
+    habitosCompletadosHoy: 0,
+    tareasCompletadasHoy: 0,
+    rachaActual: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!currentUser?.id) return;
 
-    async function loadData() {
-      if (!currentUser?.id) {
-        setWeeklyStats([]);
-        setCompletedHabits([]);
-        setLoading(false);
+    setLoading(true);
+    const userRef = doc(db, 'usuarios', currentUser.id);
+    const statsRef = collection(db, 'usuarios', currentUser.id, 'estadisticas');
+    const statsQuery = query(statsRef, orderBy(documentId(), 'desc'), limit(7));
+
+    const unsubscribeDashboard = onSnapshot(userRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setDashboard({
+          totalHabitosActivos: 0,
+          totalTareasPendientes: 0,
+          habitosCompletadosHoy: 0,
+          tareasCompletadasHoy: 0,
+          rachaActual: 0,
+        });
         return;
       }
 
-      try {
-        setLoading(true);
-        const todayId = buildDateId();
+      const rawDashboard = snapshot.data().dashboard ?? {};
+      setDashboard({
+        totalHabitosActivos: Number(rawDashboard.total_habitos_activos ?? 0),
+        totalTareasPendientes: Number(rawDashboard.total_tareas_pendientes ?? 0),
+        habitosCompletadosHoy: Number(rawDashboard.habitos_completados_hoy ?? 0),
+        tareasCompletadasHoy: Number(
+          rawDashboard.tareas_completadas_hoy ?? rawDashboard.tareas_completados_hoy ?? 0
+        ),
+        rachaActual: Number(rawDashboard.racha_actual ?? 0),
+      });
+    });
 
-        const [stats, completed] = await Promise.all([
-          getWeeklyHabitStats(currentUser.id, 7),
-          getCompletedHabitsByDate(currentUser.id, todayId),
-          // Lectura de dashboard para mantener sincronizada la vista con el modelo.
-          getUserDashboard(currentUser.id),
-        ]);
+    const unsubscribeStats = onSnapshot(
+      statsQuery,
+      (snapshots) => {
+        const stats = snapshots.docs
+          .map((item) => {
+            const data = item.data();
+            const parsed = item.id.split('-').map(Number);
+            const date = parsed.length === 3 && parsed.every((value) => Number.isFinite(value))
+              ? new Date(parsed[0], parsed[1] - 1, parsed[2])
+              : null;
 
-        if (cancelled) return;
+            return {
+              dateId: item.id,
+              dayLabel: date
+                ? date.toLocaleDateString('es-ES', { weekday: 'short' })
+                : item.id,
+              habitosCompletados: Number(data.habitos_completados ?? 0),
+              tareasCompletadas: Number(data.tareas_completadas ?? 0),
+            };
+          })
+          .reverse();
 
         setWeeklyStats(stats);
-        setCompletedHabits(completed);
-      } catch {
-        if (cancelled) return;
+        setLoading(false);
+      },
+      () => {
         setWeeklyStats([]);
-        setCompletedHabits([]);
-      } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    }
-
-    loadData();
+    );
 
     return () => {
-      cancelled = true;
+      unsubscribeDashboard();
+      unsubscribeStats();
     };
   }, [currentUser?.id]);
 
@@ -88,10 +118,15 @@ export default function HomeScreen() {
     return weeklyStats.map((item) => item.habitosCompletados);
   }, [weeklyStats]);
 
+  const taskData = useMemo(() => {
+    if (weeklyStats.length === 0) return [0, 0, 0, 0, 0, 0, 0];
+    return weeklyStats.map((item) => item.tareasCompletadas);
+  }, [weeklyStats]);
+
   const maxChartValue = useMemo(() => {
-    const currentMax = Math.max(...data, 1);
+    const currentMax = Math.max(...data, ...taskData, 1);
     return Math.max(5, Math.ceil(currentMax / 5) * 5);
-  }, [data]);
+  }, [data, taskData]);
 
   const yTicks = useMemo(() => {
     const step = Math.max(1, Math.ceil(maxChartValue / 4));
@@ -115,8 +150,18 @@ export default function HomeScreen() {
     const plotW = width - padding * 2;
     const plotH = height - padding * 2;
 
-    const points: Point[] = data.map((v, i) => {
+    const habitPoints: Point[] = data.map((v, i) => {
       const tX = data.length <= 1 ? 0 : i / (data.length - 1);
+      const tY = (v - minY) / (maxY - minY);
+
+      return {
+        x: padding + tX * plotW,
+        y: padding + (1 - tY) * plotH,
+      };
+    });
+
+    const taskPoints: Point[] = taskData.map((v, i) => {
+      const tX = taskData.length <= 1 ? 0 : i / (taskData.length - 1);
       const tY = (v - minY) / (maxY - minY);
 
       return {
@@ -128,28 +173,44 @@ export default function HomeScreen() {
     return {
       width,
       height,
-      points,
-      path: buildLinePath(points),
-      last: points[points.length - 1],
+      habitPath: buildLinePath(habitPoints),
+      taskPath: buildLinePath(taskPoints),
+      habitLast: habitPoints[habitPoints.length - 1],
+      taskLast: taskPoints[taskPoints.length - 1],
       padding,
       plotW,
       plotH,
     };
-  }, [data, chartContainerWidth, maxChartValue]);
+  }, [data, taskData, chartContainerWidth, maxChartValue]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <View style={styles.headerSide}>
-          <Ionicons name="person-outline" size={18} color={colors.text} />
-        </View>
+        <Pressable
+          style={styles.headerSide}
+          onPress={() => router.push('/crear-tarea' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Crear nueva tarea"
+        >
+          <Ionicons name="add" size={22} color={colors.text} />
+        </Pressable>
         <AppText style={[styles.headerTitle, { color: colors.text }]}>Logros</AppText>
         <View style={styles.headerSide} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
-          <AppText style={[styles.cardTitle, { color: colors.text }]}>Hábitos completados</AppText>
+          <AppText style={[styles.cardTitle, { color: colors.text }]}>Completados por día</AppText>
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#2F80ED' }]} />
+              <AppText style={[styles.legendText, { color: colors.mutedText }]}>Hábitos</AppText>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#2FA84F' }]} />
+              <AppText style={[styles.legendText, { color: colors.mutedText }]}>Tareas</AppText>
+            </View>
+          </View>
           <View style={styles.chartRow}>
             <View style={styles.yAxis}>
               {yTicks
@@ -178,9 +239,13 @@ export default function HomeScreen() {
                     />
                   );
                 })}
-                <Path d={chart.path} stroke={colors.accent} strokeWidth={2.5} fill="none" />
-                {chart.last ? (
-                  <Circle cx={chart.last.x} cy={chart.last.y} r={4} fill={colors.accent} />
+                <Path d={chart.habitPath} stroke="#2F80ED" strokeWidth={2.5} fill="none" />
+                <Path d={chart.taskPath} stroke="#2FA84F" strokeWidth={2.5} fill="none" />
+                {chart.habitLast ? (
+                  <Circle cx={chart.habitLast.x} cy={chart.habitLast.y} r={4} fill="#2F80ED" />
+                ) : null}
+                {chart.taskLast ? (
+                  <Circle cx={chart.taskLast.x} cy={chart.taskLast.y} r={4} fill="#2FA84F" />
                 ) : null}
               </Svg>
 
@@ -195,28 +260,35 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <AppText style={[styles.sectionTitle, { color: colors.text }]}>Habitos Completados</AppText>
+        <AppText style={[styles.sectionTitle, { color: colors.text }]}>Resumen del dashboard</AppText>
         <View style={[styles.listCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
           {loading ? (
             <View style={styles.row}>
               <AppText style={[styles.rowName, { color: colors.mutedText }]}>Cargando datos...</AppText>
             </View>
-          ) : completedHabits.length === 0 ? (
-            <View style={styles.row}>
-              <AppText style={[styles.rowName, { color: colors.mutedText }]}>No hay hábitos completados hoy.</AppText>
-            </View>
           ) : (
-            completedHabits.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <AppText style={[styles.rowName, { color: colors.text }]}>{item.nombre}</AppText>
-                <AppText style={[styles.rowTime, { color: colors.mutedText }]}>
-                  {item.horaRecordatorio ? `Hora ${item.horaRecordatorio}` : 'Sin hora'}
-                </AppText>
-                <AppText style={[styles.rowScore, { color: colors.mutedText }]}>
-                  {item.calificacion ? `+${item.calificacion}` : '--'}
-                </AppText>
+            <>
+              <View style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>Hábitos activos</AppText>
+                <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.totalHabitosActivos}</AppText>
               </View>
-            ))
+              <View style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>Tareas pendientes</AppText>
+                <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.totalTareasPendientes}</AppText>
+              </View>
+              <View style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>Hábitos completados hoy</AppText>
+                <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.habitosCompletadosHoy}</AppText>
+              </View>
+              <View style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>Tareas completadas hoy</AppText>
+                <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.tareasCompletadasHoy}</AppText>
+              </View>
+              <View style={styles.row}>
+                <AppText style={[styles.rowName, { color: colors.text }]}>Racha actual</AppText>
+                <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.rachaActual}</AppText>
+              </View>
+            </>
           )}
         </View>
       </ScrollView>
@@ -263,6 +335,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111111',
     marginBottom: 8,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    gap: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   chartRow: {
     flexDirection: 'row',
