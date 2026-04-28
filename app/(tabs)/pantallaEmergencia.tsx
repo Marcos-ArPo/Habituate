@@ -1,6 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
@@ -18,16 +18,20 @@ export default function PantallaEmergenciaScreen() {
       return;
     }
 
-    const normalized = phone.replace(/\s+/g, '');
-    const telUrl = `tel:${normalized}`;
-    const canOpen = await Linking.canOpenURL(telUrl);
+    const normalized = phone.replace(/[^\d+]/g, '');
 
-    if (!canOpen) {
-      Alert.alert('No disponible', 'Este dispositivo no permite iniciar llamadas.');
+    if (!normalized) {
+      Alert.alert('Numero invalido', 'El numero configurado no tiene un formato valido.');
       return;
     }
 
-    await Linking.openURL(telUrl);
+    const telUrl = `tel:${normalized}`;
+
+    try {
+      await Linking.openURL(telUrl);
+    } catch {
+      Alert.alert('No disponible', 'Este dispositivo no permite iniciar llamadas.');
+    }
   }
 
   return (
