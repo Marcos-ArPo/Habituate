@@ -96,24 +96,10 @@ jobs:
             exit 1
           fi
 
-      - name: Commit APK into main branch (repo root)
-        run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git fetch origin main
-          git checkout main
-          git pull origin main
-
-          # APK en la raíz de main
-          cp dist/app-release.apk ./app-release.apk
-
-          git add app-release.apk
-          if git diff --cached --quiet; then
-            echo "No changes to commit (APK identical)."
-            exit 0
-          fi
-
-          git commit -m "chore(android): update app-release.apk (from ${{ github.ref_name }} @ ${{ github.sha }})"
-          git push origin main
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: dist/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
