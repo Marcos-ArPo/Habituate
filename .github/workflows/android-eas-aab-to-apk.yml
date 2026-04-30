@@ -86,9 +86,7 @@ jobs:
             --ks-pass=pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --ks-key-alias=${{ secrets.ANDROID_KEY_ALIAS }}
 
-          java -jar bundletool.jar extract-apks \
-            --apks=dist/app.apks \
-            --output-dir=dist/apk
+          unzip -q dist/app.apks -d dist/apk || jar xf dist/app.apks -C dist/apk
 
           if [ -f dist/apk/universal.apk ]; then
             cp dist/apk/universal.apk dist/app-release.apk

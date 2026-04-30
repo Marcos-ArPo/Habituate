@@ -7,6 +7,8 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
+  serverTimestamp,
   where,
 } from 'firebase/firestore';
 
@@ -153,4 +155,92 @@ export async function getUserLogros(uid: string) {
   const logrosRef = collection(db, 'usuarios', uid, 'logros');
   const snapshots = await getDocs(query(logrosRef, orderBy(documentId(), 'asc')));
   return snapshots.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+export async function completeHabit(uid: string, habitId: string, dateId: string) {
+  await runTransaction(db, async (transaction) => {
+    const yesterdayId = buildDateId(-1);
+
+    const userRef = doc(db, 'usuarios', uid);
+    const habitRegisterRef = doc(db, 'usuarios', uid, 'habitos', habitId, 'registros', dateId);
+    const todayStatsRef = doc(db, 'usuarios', uid, 'estadisticas', dateId);
+    const yesterdayStatsRef = doc(db, 'usuarios', uid, 'estadisticas', yesterdayId);
+
+    const [userSnap, habitRegisterSnap, todayStatsSnap, yesterdayStatsSnap] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(habitRegisterRef),
+      transaction.get(todayStatsRef),
+      transaction.get(yesterdayStatsRef),
+    ]);
+
+    // Si el hábito ya está marcado como completado, salir
+    if (habitRegisterSnap.exists() && Boolean(habitRegisterSnap.data().completado)) {
+      return;
+    }
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+
+    const todayStats = todayStatsSnap.exists() ? todayStatsSnap.data() : {};
+    const yesterdayStats = yesterdayStatsSnap.exists() ? yesterdayStatsSnap.data() : {};
+
+    const todayHabits = Number(todayStats.habitos_completados ?? 0);
+    const todayTasks = Number(todayStats.tareas_completadas ?? 0);
+    const yesterdayHabits = Number(yesterdayStats.habitos_completados ?? 0);
+    const yesterdayTasks = Number(yesterdayStats.tareas_completadas ?? 0);
+
+    const todayTotalBefore = todayHabits + todayTasks;
+    const yesterdayTotal = yesterdayHabits + yesterdayTasks;
+
+    const currentRacha = Number(dashboard.racha_actual ?? 0);
+    const currentRachaMax = Number(todayStats.racha_maxima ?? currentRacha);
+
+    let nextRacha = currentRacha;
+    if (todayTotalBefore === 0) {
+      nextRacha = yesterdayTotal > 0 ? Math.max(1, currentRacha + 1) : 1;
+    }
+
+    const nextRachaMax = Math.max(currentRachaMax, nextRacha);
+
+    const currentCompletedHabitsToday = Number(dashboard.habitos_completados_hoy ?? 0);
+
+    // Registrar el hábito como completado
+    transaction.set(
+      habitRegisterRef,
+      {
+        completado: true,
+        completado_en: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Actualizar estadísticas del día
+    transaction.set(
+      todayStatsRef,
+      {
+        fecha: dateId,
+        habitos_completados: todayHabits + 1,
+        tareas_completadas: todayTasks,
+        racha_actual: nextRacha,
+        racha_maxima: nextRachaMax,
+      },
+      { merge: true }
+    );
+
+    // Actualizar dashboard del usuario
+    transaction.set(
+      userRef,
+      {
+        dashboard: {
+          ...dashboard,
+          habitos_completados_hoy: currentCompletedHabitsToday + 1,
+          racha_actual: nextRacha,
+          ultima_actualizacion: serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+
+    console.log('✅ Hábito completado en Firestore:', { uid, habitId, dateId });
+  });
 }

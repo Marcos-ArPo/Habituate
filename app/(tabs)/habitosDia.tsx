@@ -1,24 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   collection,
   doc,
-  getDocs,
   onSnapshot,
   query,
   runTransaction,
   serverTimestamp,
   where,
-  type Timestamp,
+  type Timestamp
 } from 'firebase/firestore';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
-import { useAppTheme } from '@/hooks/use-app-theme';
 import { useUser } from '@/context/user-context';
-import { buildDateId } from '@/services/firestore-data';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { db } from '@/services/firebase';
+import { buildDateId } from '@/services/firestore-data';
 
 type DayOption = {
   label: string;
@@ -218,6 +217,17 @@ export default function HabitosDiaScreen() {
           { merge: true }
         );
 
+        console.log('📝 Escribiendo estadísticas:', {
+          path: `usuarios/${currentUser.id}/estadisticas/${todayId}`,
+          data: {
+            fecha: todayId,
+            habitos_completados: todayHabits,
+            tareas_completadas: todayTasks + 1,
+            racha_actual: nextRacha,
+            racha_maxima: nextRachaMax,
+          },
+        });
+
         transaction.set(
           userRef,
           {
@@ -241,6 +251,111 @@ export default function HabitosDiaScreen() {
       Alert.alert('Error', 'No se pudo completar la tarea.');
     } finally {
       setIsCompleting(false);
+    }
+  }
+
+  async function completeHabit(habitId: string, dateId: string) {
+    if (!currentUser?.id) return;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const yesterdayId = buildDateId(-1);
+
+        const userRef = doc(db, 'usuarios', currentUser.id);
+        const habitRegisterRef = doc(
+          db,
+          'usuarios',
+          currentUser.id,
+          'habitos',
+          habitId,
+          'registros',
+          dateId
+        );
+        const todayStatsRef = doc(db, 'usuarios', currentUser.id, 'estadisticas', dateId);
+        const yesterdayStatsRef = doc(db, 'usuarios', currentUser.id, 'estadisticas', yesterdayId);
+
+        const [userSnap, habitRegisterSnap, todayStatsSnap, yesterdayStatsSnap] = await Promise.all(
+          [
+            transaction.get(userRef),
+            transaction.get(habitRegisterRef),
+            transaction.get(todayStatsRef),
+            transaction.get(yesterdayStatsRef),
+          ]
+        );
+
+        // Si el hábito ya está marcado como completado, salir
+        if (habitRegisterSnap.exists() && Boolean(habitRegisterSnap.data().completado)) {
+          return;
+        }
+
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+
+        const todayStats = todayStatsSnap.exists() ? todayStatsSnap.data() : {};
+        const yesterdayStats = yesterdayStatsSnap.exists() ? yesterdayStatsSnap.data() : {};
+
+        const todayHabits = Number(todayStats.habitos_completados ?? 0);
+        const todayTasks = Number(todayStats.tareas_completadas ?? 0);
+        const yesterdayHabits = Number(yesterdayStats.habitos_completados ?? 0);
+        const yesterdayTasks = Number(yesterdayStats.tareas_completadas ?? 0);
+
+        const todayTotalBefore = todayHabits + todayTasks;
+        const yesterdayTotal = yesterdayHabits + yesterdayTasks;
+
+        const currentRacha = Number(dashboard.racha_actual ?? 0);
+        const currentRachaMax = Number(todayStats.racha_maxima ?? currentRacha);
+
+        let nextRacha = currentRacha;
+        if (todayTotalBefore === 0) {
+          nextRacha = yesterdayTotal > 0 ? Math.max(1, currentRacha + 1) : 1;
+        }
+
+        const nextRachaMax = Math.max(currentRachaMax, nextRacha);
+
+        const currentCompletedHabitsToday = Number(dashboard.habitos_completados_hoy ?? 0);
+
+        // Registrar el hábito como completado
+        transaction.set(
+          habitRegisterRef,
+          {
+            completado: true,
+            completado_en: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // Actualizar estadísticas del día
+        transaction.set(
+          todayStatsRef,
+          {
+            fecha: dateId,
+            habitos_completados: todayHabits + 1,
+            tareas_completadas: todayTasks,
+            racha_actual: nextRacha,
+            racha_maxima: nextRachaMax,
+          },
+          { merge: true }
+        );
+
+        // Actualizar dashboard del usuario
+        transaction.set(
+          userRef,
+          {
+            dashboard: {
+              ...dashboard,
+              habitos_completados_hoy: currentCompletedHabitsToday + 1,
+              racha_actual: nextRacha,
+              ultima_actualizacion: serverTimestamp(),
+            },
+          },
+          { merge: true }
+        );
+      });
+
+      console.log('✅ Hábito completado:', habitId);
+    } catch (error) {
+      console.error('❌ Error al completar hábito:', error);
+      Alert.alert('Error', 'No se pudo completar el hábito.');
     }
   }
 

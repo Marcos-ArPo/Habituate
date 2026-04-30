@@ -1,16 +1,16 @@
+import { useRouter } from 'expo-router';
+import { collection, doc, documentId, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import { useRouter } from 'expo-router';
-import { collection, doc, documentId, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
-import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { type DashboardData, type WeeklyStat } from '@/services/firestore-data';
 import { db } from '@/services/firebase';
+import { type DashboardData, type WeeklyStat } from '@/services/firestore-data';
+import { Ionicons } from '@expo/vector-icons';
 
 type Point = { x: number; y: number };
 
@@ -96,7 +96,9 @@ export default function HomeScreen() {
         setWeeklyStats(stats);
         setLoading(false);
       },
-      () => {
+      (error) => {
+        console.error('Código de error:', error.code);
+        console.error('Mensaje:', error.message);
         setWeeklyStats([]);
         setLoading(false);
       }
