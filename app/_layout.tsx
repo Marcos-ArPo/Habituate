@@ -8,7 +8,7 @@ import { UserProvider } from '@/context/user-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
-  anchor: 'index',
+  anchor: 'loading',
 };
 
 export default function RootLayout() {
@@ -28,6 +28,7 @@ function RootNavigator() {
   return (
     <ThemeProvider value={(appColorScheme ?? colorScheme) === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
+        <Stack.Screen name="loading" options={{ headerShown: false }} />
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
         <Stack.Screen name="setup-phones" options={{ headerShown: false }} />
