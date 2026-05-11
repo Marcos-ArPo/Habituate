@@ -1,3 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
+import { useRouter } from 'expo-router';
+import { addDoc, collection, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -10,12 +16,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker, {
-  type DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
-import { addDoc, collection, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 
 import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
@@ -163,7 +163,7 @@ export default function CrearTareaScreen() {
 
       await addDoc(collection(db, 'usuarios', currentUser.id, 'tareas'), taskPayload);
 
-      Alert.alert('Tarea creada', 'La tarea se guardo correctamente en Firestore.');
+      Alert.alert('Tarea creada', 'La tarea fue creada correctamente.');
       router.back();
     } catch {
       Alert.alert('Error', 'No se pudo crear la tarea en Firestore.');
@@ -174,12 +174,20 @@ export default function CrearTareaScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}> 
-        <Pressable onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Pressable style={styles.headerButton} onPress={() => router.back()}>
+          <Ionicons name="close" size={24} color={colors.text} />
         </Pressable>
-        <AppText style={[styles.headerTitle, { color: colors.text }]}>Crear tarea</AppText>
-        <View style={styles.headerButton} />
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>
+          Crear tarea
+        </AppText>
+        <Pressable
+          style={[styles.headerButton, { opacity: canSave ? 1 : 0.5 }]}
+          onPress={onSaveTask}
+          disabled={!canSave}
+        >
+          <AppText style={[styles.saveButton, { color: colors.primary }]}>Guardar</AppText>
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
@@ -251,27 +259,29 @@ export default function CrearTareaScreen() {
             <AppText style={[styles.label, { color: colors.text }]}>Fecha vencimiento</AppText>
             {Platform.OS === 'web' ? (
               <>
-                <TextInput
+                <input 
+                  type='date'
                   value={webDate}
-                  onChangeText={setWebDate}
-                  placeholder="YYYY-MM-DD"
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-                  ]}
-                  placeholderTextColor={colors.mutedText}
-                  autoCapitalize="none"
+                  onChange={(e) => setWebDate(e.target.value)}
+                  style = {{
+                    ...styles.webDate,
+                    backgroundColor: colors.surface, 
+                    borderColor: colors.border, 
+                    color: colors.text,
+                    font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                  }}
                 />
-                <TextInput
+                <input 
+                  type='time'
                   value={webTime}
-                  onChangeText={setWebTime}
-                  placeholder="HH:mm"
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-                  ]}
-                  placeholderTextColor={colors.mutedText}
-                  autoCapitalize="none"
+                  onChange={(e) => setWebTime(e.target.value)}
+                  style = {{
+                    ...styles.webDate,
+                    font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                    backgroundColor: colors.surface, 
+                    borderColor: colors.border, 
+                    color: colors.text,
+                  }}
                 />
               </>
             ) : (
@@ -332,20 +342,6 @@ export default function CrearTareaScreen() {
               ))}
             </View>
           </View>
-
-          <Pressable
-            onPress={onSaveTask}
-            disabled={!canSave}
-            style={[
-              styles.saveButton,
-              { backgroundColor: colors.primary },
-              !canSave && styles.disabledButton,
-            ]}
-          >
-            <AppText style={[styles.saveText, { color: colors.onPrimary }]}>
-              {isSaving ? 'Guardando...' : 'Guardar tarea'}
-            </AppText>
-          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -360,17 +356,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 52,
-    borderBottomWidth: 1,
-    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
   },
   headerButton: {
-    width: 28,
+    padding: 8,
+    minWidth: 40,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 16,
@@ -446,11 +442,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveButton: {
-    marginTop: 8,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontWeight: '600',
+    fontSize: 16,
   },
   saveText: {
     fontSize: 13,
@@ -459,4 +452,12 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.5,
   },
+  webDate: {
+    height: 42,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingLeft: 10,
+    paddingRight: 10,
+  }
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import {
   collection,
   doc,
@@ -17,7 +18,14 @@ import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { db } from '@/services/firebase';
-import { buildDateId } from '@/services/firestore-data';
+import {
+  buildDateId,
+  deactivateHabit,
+  deleteHabit,
+  getHabitsByDate,
+  reactivateHabit,
+  type HabitItem,
+} from '@/services/firestore-data';
 
 type DayOption = {
   label: string;
@@ -31,6 +39,8 @@ type TaskItem = {
   fechaVencimiento: Date | null;
   prioridad: number;
 };
+
+type TabType = 'tareas' | 'habitos';
 
 function toDateFromTimestamp(value: unknown): Date | null {
   if (!value || typeof value !== 'object') return null;
@@ -61,16 +71,28 @@ function formatDateTime(date: Date | null) {
     hour: '2-digit',
     minute: '2-digit',
   });
-};
+}
+
+function getDayNamesFromIndices(indices: number[]): string {
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sab'];
+  return indices.map((idx) => dayNames[idx]).join(', ');
+}
 
 export default function HabitosDiaScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
   const { currentUser } = useUser();
+  const navigation = useNavigation();
+
+  // State
   const [selectedDay, setSelectedDay] = useState('Hoy');
+  const [activeTab, setActiveTab] = useState<TabType>('tareas');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [habits, setHabits] = useState<HabitItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
+  const [selectedHabit, setSelectedHabit] = useState<HabitItem | null>(null);
+  const [habitOptionsId, setHabitOptionsId] = useState<string | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
 
   const days = useMemo<DayOption[]>(
@@ -88,14 +110,15 @@ export default function HabitosDiaScreen() {
     [days, selectedDay]
   );
 
+  const dateId = useMemo(() => buildDateId(selectedOffset), [selectedOffset]);
+
+  // Cargar tareas
   useEffect(() => {
     if (!currentUser?.id) {
       setTasks([]);
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
     const tasksRef = collection(db, 'usuarios', currentUser.id, 'tareas');
     const tasksQuery = query(tasksRef, where('completada', '==', false));
 
@@ -121,11 +144,9 @@ export default function HabitosDiaScreen() {
           });
 
         setTasks(mapped);
-        setLoading(false);
       },
       () => {
         setTasks([]);
-        setLoading(false);
       }
     );
 
@@ -134,11 +155,35 @@ export default function HabitosDiaScreen() {
     };
   }, [currentUser?.id, selectedOffset]);
 
-  const tasksLabel = useMemo(() => {
-    if (loading) return 'Cargando tareas...';
-    if (tasks.length === 0) return 'No hay tareas pendientes para esta fecha.';
-    return '';
-  }, [loading, tasks.length]);
+  // Cargar hábitos
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setHabits([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    getHabitsByDate(currentUser.id, dateId)
+      .then((loadedHabits) => {
+        setHabits(loadedHabits);
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error('Error cargando hábitos:', error);
+        setHabits([]);
+        setLoading(false);
+      });
+  }, [currentUser?.id, dateId]);
+
+  const emptyLabel = useMemo(() => {
+    if (loading) return 'Cargando...';
+    if (activeTab === 'tareas') {
+      return tasks.length === 0 ? 'No hay tareas pendientes para esta fecha.' : '';
+    } else {
+      return habits.length === 0 ? 'No hay hábitos programados para esta fecha.' : '';
+    }
+  }, [loading, tasks.length, habits.length, activeTab]);
 
   async function completeTask(task: TaskItem) {
     if (!currentUser?.id) return;
@@ -254,10 +299,12 @@ export default function HabitosDiaScreen() {
     }
   }
 
-  async function completeHabit(habitId: string, dateId: string) {
+  async function completeHabit(habitId: string) {
     if (!currentUser?.id) return;
 
     try {
+      setIsCompleting(true);
+
       await runTransaction(db, async (transaction) => {
         const yesterdayId = buildDateId(-1);
 
@@ -352,19 +399,139 @@ export default function HabitosDiaScreen() {
         );
       });
 
-      console.log('✅ Hábito completado:', habitId);
+      setSelectedHabit(null);
+      setHabits((prev) =>
+        prev.map((h) => (h.id === habitId ? { ...h, completado: true } : h))
+      );
     } catch (error) {
-      console.error('❌ Error al completar hábito:', error);
+      console.error('Error al completar hábito:', error);
       Alert.alert('Error', 'No se pudo completar el hábito.');
+    } finally {
+      setIsCompleting(false);
     }
+  }
+
+  function navigateToCreateHabit() {
+    (navigation as any).navigate('crear-habito');
+  }
+
+  function navigateToCreateTask() {
+    (navigation as any).navigate('crear-tarea');
+  }
+
+  function navigateToEditHabit(habit: HabitItem) {
+    const habitFromList = habits.find((h) => h.id === habit.id);
+    if (habitFromList) {
+      (navigation as any).navigate('crear-habito', {
+        habitId: habit.id,
+        initialData: habitFromList,
+      });
+    }
+    setHabitOptionsId(null);
+  }
+
+  async function handleDeactivateHabit(habitId: string) {
+    Alert.alert('Desactivar hábito', '¿Desactivar este hábito?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Desactivar',
+        onPress: async () => {
+          try {
+            if (currentUser?.id) {
+              await deactivateHabit(currentUser.id, habitId);
+              setHabits((prev) => prev.filter((h) => h.id !== habitId));
+              setHabitOptionsId(null);
+              Alert.alert('Éxito', 'Hábito desactivado.');
+            }
+          } catch (error) {
+            console.error('Error desactivando hábito:', error);
+            Alert.alert('Error', 'No se pudo desactivar el hábito.');
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
+  }
+
+  async function handleReactivateHabit(habitId: string) {
+    try {
+      if (currentUser?.id) {
+        await reactivateHabit(currentUser.id, habitId);
+        // Recargar hábitos
+        const updated = await getHabitsByDate(currentUser.id, dateId);
+        setHabits(updated);
+        setHabitOptionsId(null);
+        Alert.alert('Éxito', 'Hábito reactivado.');
+      }
+    } catch (error) {
+      console.error('Error reactivando hábito:', error);
+      Alert.alert('Error', 'No se pudo reactivar el hábito.');
+    }
+  }
+
+  async function handleDeleteHabit(habitId: string) {
+    Alert.alert('Eliminar hábito', '¿Eliminar este hábito permanentemente?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        onPress: async () => {
+          try {
+            if (currentUser?.id) {
+              await deleteHabit(currentUser.id, habitId);
+              setHabits((prev) => prev.filter((h) => h.id !== habitId));
+              setHabitOptionsId(null);
+              Alert.alert('Éxito', 'Hábito eliminado.');
+            }
+          } catch (error) {
+            console.error('Error eliminando hábito:', error);
+            Alert.alert('Error', 'No se pudo eliminar el hábito.');
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
   }
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide} />
-        <AppText style={[styles.headerTitle, { color: colors.text }]}>Tareas del Día</AppText>
-        <View style={styles.headerSide} />
+        <AppText style={[styles.headerTitle, { color: colors.text }]}>Mi Día</AppText>
+        <Pressable style={styles.headerSide} onPress={() => 
+          activeTab === 'tareas' ? navigateToCreateTask() : navigateToCreateHabit()}>
+          <Ionicons name="add-circle" size={28} color={colors.primary} />
+        </Pressable>
+      </View>
+
+      <View style={[styles.tabsContainer, { borderBottomColor: colors.border }]}>
+        <Pressable
+          onPress={() => setActiveTab('tareas')}
+          style={[
+            styles.tab,
+            activeTab === 'tareas' && { borderBottomColor: colors.primary, borderBottomWidth: 3 },
+          ]}
+        >
+          <AppText style={[
+              styles.tabText,
+              { color: activeTab === 'tareas' ? colors.primary : colors.mutedText }
+            ]}>
+            Tareas {tasks.length > 0 && `(${tasks.length})`}
+          </AppText>
+        </Pressable>
+        <Pressable
+          onPress={() => setActiveTab('habitos')}
+          style={[
+            styles.tab,
+            activeTab === 'habitos' && { borderBottomColor: colors.primary, borderBottomWidth: 3 },
+          ]}
+        >
+          <AppText style={[
+              styles.tabText, 
+              { color: activeTab === 'habitos' ? colors.primary : colors.mutedText }
+            ]}>
+            Hábitos {habits.filter(h => !h.completado).length > 0 && `(${habits.filter(h => !h.completado).length})`}
+          </AppText>
+        </Pressable>
       </View>
 
       <View style={styles.daysContainer}>
@@ -375,13 +542,13 @@ export default function HabitosDiaScreen() {
             style={[
               styles.dayButton,
               { backgroundColor: colors.elevated },
-              selectedDay === day.label && styles.dayButtonActive,
+              selectedDay === day.label && { backgroundColor: colors.primary },
             ]}
           >
             <AppText
               style={[
                 styles.dayButtonText,
-                selectedDay === day.label && styles.dayButtonTextActive,
+                selectedDay === day.label && { color: colors.onPrimary, fontWeight: '700' },
                 { color: selectedDay === day.label ? colors.onPrimary : colors.mutedText },
               ]}
             >
@@ -392,41 +559,83 @@ export default function HabitosDiaScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tasksLabel ? (
-          <View style={[styles.habitCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <AppText style={[styles.habitName, { color: colors.mutedText }]}>{tasksLabel}</AppText>
+        {emptyLabel ? (
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <AppText style={[styles.emptyText, { color: colors.mutedText }]}>{emptyLabel}</AppText>
           </View>
-        ) : (
+        ) : activeTab === 'tareas' ? (
           tasks.map((task) => (
             <View
               key={task.id}
-              style={[styles.habitCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.habitContent}>
+              style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.cardContent}>
                 <View style={[styles.iconContainer, { backgroundColor: colors.elevated }]}>
-                  <Ionicons name="checkbox-outline" size={24} color={colors.accent} />
+                  <Ionicons name="checkmark-circle-outline" size={24} color={colors.primary} />
                 </View>
-                <View style={styles.habitInfo}>
-                  <AppText style={[styles.habitName, { color: colors.text }]}>{task.titulo}</AppText>
-                  <AppText style={[styles.habitTime, { color: colors.mutedText }]}>
+                <View style={styles.cardInfo}>
+                  <AppText style={[styles.cardTitle, { color: colors.text }]}>{task.titulo}</AppText>
+                  <AppText style={[styles.cardMeta, { color: colors.mutedText }]}>
                     {formatDateTime(task.fechaVencimiento)}
                   </AppText>
                 </View>
               </View>
-              <Pressable style={[styles.markButton, { backgroundColor: colors.primary }]} onPress={() => setSelectedTask(task)}>
-                <AppText style={[styles.markButtonText, { color: colors.onPrimary }]}>Ver detalle</AppText>
+              <Pressable
+                style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                onPress={() => setSelectedTask(task)}
+              >
+                <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Ver</AppText>
               </Pressable>
             </View>
+          ))
+        ) : (
+          habits.map((habit) => (
+            <Pressable
+              key={habit.id}
+              onLongPress={() => setHabitOptionsId(habit.id)}
+              style={[
+                styles.card,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                habit.completado && { opacity: 0.6 },
+              ]}
+            >
+              <View style={styles.cardContent}>
+                <View style={[styles.iconContainer, { backgroundColor: colors.elevated }]}>
+                  <Ionicons
+                    name={habit.completado ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                    size={24}
+                    color={habit.completado ? colors.accent : colors.primary}
+                  />
+                </View>
+                <View style={styles.cardInfo}>
+                  <AppText style={[styles.cardTitle, { color: colors.text, textDecorationLine: habit.completado ? 'line-through' : 'none' }]}>
+                    {habit.titulo}
+                  </AppText>
+                  <AppText style={[styles.cardMeta, { color: colors.mutedText }]}>
+                    {getDayNamesFromIndices(habit.diasSemana)}
+                  </AppText>
+                </View>
+              </View>
+              {!habit.completado && (
+                <Pressable
+                  style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                  onPress={() => setSelectedHabit(habit)}
+                >
+                  <AppText style={[styles.actionButtonText, { color: colors.onPrimary }]}>Completar</AppText>
+                </Pressable>
+              )}
+            </Pressable>
           ))
         )}
       </ScrollView>
 
+      {/* Modal para tareas */}
       <Modal visible={Boolean(selectedTask)} transparent animationType="fade" onRequestClose={() => setSelectedTask(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <AppText style={[styles.modalTitle, { color: colors.text }]}>{selectedTask?.titulo ?? ''}</AppText>
-            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Descripcion</AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Descripción</AppText>
             <AppText style={[styles.modalText, { color: colors.text }]}>
-              {selectedTask?.descripcion || 'Sin descripcion'}
+              {selectedTask?.descripcion || 'Sin descripción'}
             </AppText>
             <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Fecha y hora</AppText>
             <AppText style={[styles.modalText, { color: colors.text }]}>
@@ -436,13 +645,15 @@ export default function HabitosDiaScreen() {
             <View style={styles.modalActions}>
               <Pressable
                 style={[styles.modalButton, { borderColor: colors.border }]}
-                onPress={() => setSelectedTask(null)}>
+                onPress={() => setSelectedTask(null)}
+              >
                 <AppText style={[styles.modalButtonText, { color: colors.text }]}>Cerrar</AppText>
               </Pressable>
               <Pressable
                 style={[styles.modalButton, { backgroundColor: colors.primary }]}
                 onPress={() => selectedTask && completeTask(selectedTask)}
-                disabled={isCompleting}>
+                disabled={isCompleting}
+              >
                 <AppText style={[styles.modalButtonText, { color: colors.onPrimary }]}>
                   {isCompleting ? 'Completando...' : 'Completar tarea'}
                 </AppText>
@@ -450,6 +661,86 @@ export default function HabitosDiaScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Modal para hábitos */}
+      <Modal visible={Boolean(selectedHabit)} transparent animationType="fade" onRequestClose={() => setSelectedHabit(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <AppText style={[styles.modalTitle, { color: colors.text }]}>{selectedHabit?.titulo ?? ''}</AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Descripción</AppText>
+            <AppText style={[styles.modalText, { color: colors.text }]}>
+              {selectedHabit?.descripcion || 'Sin descripción'}
+            </AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Días</AppText>
+            <AppText style={[styles.modalText, { color: colors.text }]}>
+              {selectedHabit?.diasSemana ? getDayNamesFromIndices(selectedHabit.diasSemana) : 'N/A'}
+            </AppText>
+            <AppText style={[styles.modalLabel, { color: colors.mutedText }]}>Categoría</AppText>
+            <AppText style={[styles.modalText, { color: colors.text }]}>
+              {selectedHabit?.categoria || 'General'}
+            </AppText>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, { borderColor: colors.border }]}
+                onPress={() => setSelectedHabit(null)}
+              >
+                <AppText style={[styles.modalButtonText, { color: colors.text }]}>Cerrar</AppText>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={() => selectedHabit && completeHabit(selectedHabit.id)}
+                disabled={isCompleting}
+              >
+                <AppText style={[styles.modalButtonText, { color: colors.onPrimary }]}>
+                  {isCompleting ? 'Completando...' : 'Marcar completado'}
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal para opciones de hábito */}
+      <Modal
+        visible={Boolean(habitOptionsId)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHabitOptionsId(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setHabitOptionsId(null)}>
+          <View style={[styles.optionsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Pressable
+              style={[styles.optionButton, { borderBottomColor: colors.border, borderBottomWidth: 1 }]}
+              onPress={() => {
+                const habit = habits.find((h) => h.id === habitOptionsId);
+                if (habit) navigateToEditHabit(habit);
+              }}
+            >
+              <Ionicons name="pencil" size={18} color={colors.primary} />
+              <AppText style={[styles.optionText, { color: colors.text }]}>Editar</AppText>
+            </Pressable>
+            <Pressable
+              style={[styles.optionButton, { borderBottomColor: colors.border, borderBottomWidth: 1 }]}
+              onPress={() => {
+                if (habitOptionsId) handleDeactivateHabit(habitOptionsId);
+              }}
+            >
+              <Ionicons name="pause-circle" size={18} color="#f59e0b" />
+              <AppText style={[styles.optionText, { color: '#f59e0b' }]}>Desactivar</AppText>
+            </Pressable>
+            <Pressable
+              style={[styles.optionButton]}
+              onPress={() => {
+                if (habitOptionsId) handleDeleteHabit(habitOptionsId);
+              }}
+            >
+              <Ionicons name="trash" size={18} color="#ef4444" />
+              <AppText style={[styles.optionText, { color: '#ef4444' }]}>Eliminar</AppText>
+            </Pressable>
+          </View>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -460,62 +751,73 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: 14,
     paddingHorizontal: 16,
     paddingBottom: 10,
+    paddingTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerSide: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
     fontSize: 18,
     fontWeight: '700',
-    color: '#111111',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 0,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   daysContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 10,
     justifyContent: 'space-between',
+    gap: 8,
   },
   dayButton: {
+    flex: 1,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: '#f5f5f5',
-  },
-  dayButtonActive: {
-    backgroundColor: '#111111',
+    paddingVertical: 8,
+    borderRadius: 6,
   },
   dayButtonText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  dayButtonTextActive: {
-    color: '#ffffff',
+    textAlign: 'center',
   },
   content: {
     paddingHorizontal: 16,
     paddingBottom: 22,
+    gap: 10,
   },
-  habitCard: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 12,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#eef2f7',
     borderRadius: 10,
-    backgroundColor: '#ffffff',
   },
-  habitContent: {
+  cardContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -524,35 +826,34 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: '#f0f4ff',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  habitInfo: {
+  cardInfo: {
     flex: 1,
   },
-  habitName: {
+  cardTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#111111',
     marginBottom: 2,
   },
-  habitTime: {
+  cardMeta: {
     fontSize: 11,
-    color: '#9ca3af',
   },
-  markButton: {
-    paddingHorizontal: 14,
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 13,
+  },
+  actionButton: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: '#111111',
     marginLeft: 8,
   },
-  markButtonText: {
+  actionButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ffffff',
   },
   modalBackdrop: {
     flex: 1,
@@ -563,17 +864,17 @@ const styles = StyleSheet.create({
   modalCard: {
     borderWidth: 1,
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   modalLabel: {
     fontSize: 11,
     fontWeight: '600',
-    marginTop: 6,
+    marginTop: 8,
     marginBottom: 3,
   },
   modalText: {
@@ -583,13 +884,13 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 14,
+    marginTop: 16,
     gap: 8,
   },
   modalButton: {
-    minHeight: 34,
+    minHeight: 36,
     borderRadius: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -597,5 +898,22 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  optionsCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    minWidth: 150,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

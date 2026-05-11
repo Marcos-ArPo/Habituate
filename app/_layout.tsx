@@ -34,6 +34,7 @@ function RootNavigator() {
         <Stack.Screen name="setup-phones" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="crear-tarea" options={{ headerShown: false }} />
+        <Stack.Screen name="crear-habito" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />

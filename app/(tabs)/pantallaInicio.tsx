@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
-import { collection, doc, documentId, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, documentId, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
-import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
@@ -10,9 +10,31 @@ import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { db } from '@/services/firebase';
 import { type DashboardData, type WeeklyStat } from '@/services/firestore-data';
-import { Ionicons } from '@expo/vector-icons';
 
 type Point = { x: number; y: number };
+
+const CHART_WINDOW_DAYS = 3;
+
+function toDateId(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function buildRecentDateIds(days: number) {
+  const result: string[] = [];
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const current = new Date(base);
+    current.setDate(base.getDate() - i);
+    result.push(toDateId(current));
+  }
+
+  return result;
+}
 
 function buildLinePath(points: Point[]) {
   if (points.length === 0) return '';
@@ -45,7 +67,15 @@ export default function HomeScreen() {
     setLoading(true);
     const userRef = doc(db, 'usuarios', currentUser.id);
     const statsRef = collection(db, 'usuarios', currentUser.id, 'estadisticas');
-    const statsQuery = query(statsRef, orderBy(documentId(), 'desc'), limit(7));
+    const dateWindow = buildRecentDateIds(CHART_WINDOW_DAYS);
+    const startDateId = dateWindow[0];
+    const endDateId = dateWindow[dateWindow.length - 1];
+    const statsQuery = query(
+      statsRef,
+      where(documentId(), '>=', startDateId),
+      where(documentId(), '<=', endDateId),
+      orderBy(documentId(), 'asc')
+    );
 
     const unsubscribeDashboard = onSnapshot(userRef, (snapshot) => {
       if (!snapshot.exists()) {
@@ -74,24 +104,28 @@ export default function HomeScreen() {
     const unsubscribeStats = onSnapshot(
       statsQuery,
       (snapshots) => {
-        const stats = snapshots.docs
-          .map((item) => {
-            const data = item.data();
-            const parsed = item.id.split('-').map(Number);
-            const date = parsed.length === 3 && parsed.every((value) => Number.isFinite(value))
-              ? new Date(parsed[0], parsed[1] - 1, parsed[2])
-              : null;
+        const byDate = new Map(
+          snapshots.docs.map((item) => [
+            item.id,
+            {
+              habitosCompletados: Number(item.data().habitos_completados ?? 0),
+              tareasCompletadas: Number(item.data().tareas_completadas ?? 0),
+            },
+          ])
+        );
 
-            return {
-              dateId: item.id,
-              dayLabel: date
-                ? date.toLocaleDateString('es-ES', { weekday: 'short' })
-                : item.id,
-              habitosCompletados: Number(data.habitos_completados ?? 0),
-              tareasCompletadas: Number(data.tareas_completadas ?? 0),
-            };
-          })
-          .reverse();
+        const stats: WeeklyStat[] = dateWindow.map((dateId) => {
+          const [year, month, day] = dateId.split('-').map(Number);
+          const date = new Date(year, month - 1, day);
+          const item = byDate.get(dateId);
+
+          return {
+            dateId,
+            dayLabel: date.toLocaleDateString('es-ES', { weekday: 'short' }),
+            habitosCompletados: item?.habitosCompletados ?? 0,
+            tareasCompletadas: item?.tareasCompletadas ?? 0,
+          };
+        });
 
         setWeeklyStats(stats);
         setLoading(false);
@@ -111,17 +145,23 @@ export default function HomeScreen() {
   }, [currentUser?.id]);
 
   const days = useMemo(() => {
-    if (weeklyStats.length === 0) return ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    if (weeklyStats.length === 0) {
+      return buildRecentDateIds(CHART_WINDOW_DAYS).map((dateId) => {
+        const [year, month, day] = dateId.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        return date.toLocaleDateString('es-ES', { weekday: 'short' });
+      });
+    }
     return weeklyStats.map((item) => item.dayLabel);
   }, [weeklyStats]);
 
   const data = useMemo(() => {
-    if (weeklyStats.length === 0) return [0, 0, 0, 0, 0, 0, 0];
+    if (weeklyStats.length === 0) return Array(CHART_WINDOW_DAYS).fill(0);
     return weeklyStats.map((item) => item.habitosCompletados);
   }, [weeklyStats]);
 
   const taskData = useMemo(() => {
-    if (weeklyStats.length === 0) return [0, 0, 0, 0, 0, 0, 0];
+    if (weeklyStats.length === 0) return Array(CHART_WINDOW_DAYS).fill(0);
     return weeklyStats.map((item) => item.tareasCompletadas);
   }, [weeklyStats]);
 
@@ -188,14 +228,6 @@ export default function HomeScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <Pressable
-          style={styles.headerSide}
-          onPress={() => router.push('/crear-tarea' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Crear nueva tarea"
-        >
-          <Ionicons name="add" size={22} color={colors.text} />
-        </Pressable>
         <AppText style={[styles.headerTitle, { color: colors.text }]}>Logros</AppText>
         <View style={styles.headerSide} />
       </View>
@@ -252,11 +284,17 @@ export default function HomeScreen() {
               </Svg>
 
               <View style={styles.xAxis}>
-                {days.map((d) => (
-                  <AppText key={d} style={[styles.xAxisLabel, { color: colors.mutedText }]}>
-                    {d}
-                  </AppText>
-                ))}
+                {weeklyStats.length > 0
+                  ? weeklyStats.map((item) => (
+                      <AppText key={item.dateId} style={[styles.xAxisLabel, { color: colors.mutedText }]}>
+                        {item.dayLabel}
+                      </AppText>
+                    ))
+                  : days.map((d, index) => (
+                      <AppText key={`fallback-${index}-${d}`} style={[styles.xAxisLabel, { color: colors.mutedText }]}>
+                        {d}
+                      </AppText>
+                    ))}
               </View>
             </View>
           </View>
@@ -322,6 +360,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#111111',
+    padding: 10,
   },
   content: {
     paddingHorizontal: 16,

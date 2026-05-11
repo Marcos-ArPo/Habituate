@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   doc,
   documentId,
@@ -9,6 +10,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 
@@ -31,12 +33,25 @@ export type WeeklyStat = {
 
 export type HabitItem = {
   id: string;
-  nombre: string;
+  titulo: string;
   descripcion: string;
-  horaRecordatorio: string;
-  icono: string;
+  categoria: string;
+  prioridad: number;
+  diasSemana: number[];
   completado: boolean;
-  calificacion: number | null;
+  activo: boolean;
+};
+
+export type HabitFirestore = {
+  id_categoria: any;
+  categoria_nombre: string;
+  titulo: string;
+  descripcion: string;
+  prioridad: number;
+  dias_semana: number[];
+  activo: boolean;
+  creado_en: any;
+  actualizado_en?: any;
 };
 
 function toDateId(date: Date) {
@@ -63,6 +78,24 @@ export function buildDateId(offsetDays = 0) {
   const base = new Date();
   base.setDate(base.getDate() + offsetDays);
   return toDateId(base);
+}
+
+/**
+ * Obtiene el día de la semana desde un dateId (0=domingo, 6=sábado)
+ */
+function getDayOfWeekFromDateId(dateId: string): number | null {
+  const parsed = parseDateId(dateId);
+  if (!parsed) return null;
+  return parsed.getDay();
+}
+
+/**
+ * Verifica si un hábito debe mostrarse para una fecha específica
+ */
+function shouldHabitBeDisplayed(diasSemana: number[], dateId: string): boolean {
+  const dayOfWeek = getDayOfWeekFromDateId(dateId);
+  if (dayOfWeek === null) return false;
+  return diasSemana.includes(dayOfWeek);
 }
 
 export async function getUserDashboard(uid: string): Promise<DashboardData> {
@@ -113,27 +146,35 @@ export async function getHabitsByDate(uid: string, dateId: string): Promise<Habi
 
   const items = await Promise.all(
     habitsSnapshots.docs.map(async (habitDoc) => {
-      const habitData = habitDoc.data();
+      const habitData = habitDoc.data() as HabitFirestore;
+      const diasSemana = Array.isArray(habitData.dias_semana) ? habitData.dias_semana : [];
+
+      // Solo incluir si el hábito aplica a este día de la semana
+      if (!shouldHabitBeDisplayed(diasSemana, dateId)) {
+        return null;
+      }
+
       const registerRef = doc(db, 'usuarios', uid, 'habitos', habitDoc.id, 'registros', dateId);
       const registerSnap = await getDoc(registerRef);
       const registerData = registerSnap.exists() ? registerSnap.data() : null;
 
       return {
         id: habitDoc.id,
-        nombre: String(habitData.nombre ?? 'Sin nombre'),
+        titulo: String(habitData.titulo ?? 'Sin título'),
         descripcion: String(habitData.descripcion ?? ''),
-        horaRecordatorio: String(habitData.hora_recordatorio ?? ''),
-        icono: String(habitData.icono ?? ''),
+        categoria: String(habitData.categoria_nombre ?? 'General'),
+        prioridad: Number(habitData.prioridad ?? 3),
+        diasSemana,
         completado: Boolean(registerData?.completado ?? false),
-        calificacion:
-          typeof registerData?.calificacion === 'number' ? Number(registerData.calificacion) : null,
+        activo: Boolean(habitData.activo ?? true),
       };
     })
   );
 
-  items.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-ES'));
+  const filtered = items.filter((item): item is HabitItem => item !== null);
+  filtered.sort((a, b) => a.titulo.localeCompare(b.titulo, 'es-ES'));
 
-  return items;
+  return filtered;
 }
 
 export async function getCompletedHabitsByDate(uid: string, dateId: string): Promise<HabitItem[]> {
@@ -155,6 +196,214 @@ export async function getUserLogros(uid: string) {
   const logrosRef = collection(db, 'usuarios', uid, 'logros');
   const snapshots = await getDocs(query(logrosRef, orderBy(documentId(), 'asc')));
   return snapshots.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+/**
+ * Crear un nuevo hábito
+ */
+export async function createHabit(
+  uid: string,
+  titulo: string,
+  descripcion: string,
+  categoryId: string,
+  categoryName: string,
+  prioridad: number,
+  diasSemana: number[]
+) {
+  const habitsRef = collection(db, 'usuarios', uid, 'habitos');
+
+  const habitPayload: HabitFirestore = {
+    id_categoria: doc(db, 'usuarios', uid, 'categorias', categoryId),
+    categoria_nombre: categoryName,
+    titulo: titulo.trim(),
+    descripcion: descripcion.trim(),
+    prioridad: Math.max(1, Math.min(5, prioridad)),
+    dias_semana: diasSemana,
+    activo: true,
+    creado_en: serverTimestamp(),
+  };
+
+  const docRef = await addDoc(habitsRef, habitPayload);
+
+  // Actualizar dashboard del usuario
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, 'usuarios', uid);
+    const userSnap = await transaction.get(userRef);
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+    const currentActive = Number(dashboard.total_habitos_activos ?? 0);
+
+    transaction.set(
+      userRef,
+      {
+        dashboard: {
+          ...dashboard,
+          total_habitos_activos: currentActive + 1,
+          ultima_actualizacion: serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+  });
+
+  return docRef.id;
+}
+
+/**
+ * Actualizar un hábito existente
+ */
+export async function updateHabit(
+  uid: string,
+  habitId: string,
+  updates: Partial<{
+    titulo: string;
+    descripcion: string;
+    categoryId: string;
+    categoryName: string;
+    prioridad: number;
+    diasSemana: number[];
+  }>
+) {
+  const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
+  const updatePayload: Record<string, any> = {
+    actualizado_en: serverTimestamp(),
+  };
+
+  if (updates.titulo !== undefined) updatePayload.titulo = updates.titulo.trim();
+  if (updates.descripcion !== undefined) updatePayload.descripcion = updates.descripcion.trim();
+  if (updates.categoryId !== undefined) {
+    updatePayload.id_categoria = doc(db, 'usuarios', uid, 'categorias', updates.categoryId);
+  }
+  if (updates.categoryName !== undefined) updatePayload.categoria_nombre = updates.categoryName;
+  if (updates.prioridad !== undefined) {
+    updatePayload.prioridad = Math.max(1, Math.min(5, updates.prioridad));
+  }
+  if (updates.diasSemana !== undefined) updatePayload.dias_semana = updates.diasSemana;
+
+  await updateDoc(habitRef, updatePayload);
+}
+
+/**
+ * Desactivar un hábito (soft delete)
+ */
+export async function deactivateHabit(uid: string, habitId: string) {
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, 'usuarios', uid);
+    const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
+
+    const [userSnap, habitSnap] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(habitRef),
+    ]);
+
+    if (!habitSnap.exists()) return;
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+    const currentActive = Number(dashboard.total_habitos_activos ?? 0);
+
+    // Desactivar hábito
+    transaction.update(habitRef, {
+      activo: false,
+      actualizado_en: serverTimestamp(),
+    });
+
+    // Decrementar contador
+    transaction.set(
+      userRef,
+      {
+        dashboard: {
+          ...dashboard,
+          total_habitos_activos: Math.max(0, currentActive - 1),
+          ultima_actualizacion: serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+  });
+}
+
+/**
+ * Reactivar un hábito desactivado
+ */
+export async function reactivateHabit(uid: string, habitId: string) {
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, 'usuarios', uid);
+    const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
+
+    const [userSnap, habitSnap] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(habitRef),
+    ]);
+
+    if (!habitSnap.exists()) return;
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+    const currentActive = Number(dashboard.total_habitos_activos ?? 0);
+
+    // Reactivar hábito
+    transaction.update(habitRef, {
+      activo: true,
+      actualizado_en: serverTimestamp(),
+    });
+
+    // Incrementar contador
+    transaction.set(
+      userRef,
+      {
+        dashboard: {
+          ...dashboard,
+          total_habitos_activos: currentActive + 1,
+          ultima_actualizacion: serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+  });
+}
+
+/**
+ * Eliminar un hábito completamente (hard delete)
+ */
+export async function deleteHabit(uid: string, habitId: string) {
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, 'usuarios', uid);
+    const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
+
+    const [userSnap, habitSnap] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(habitRef),
+    ]);
+
+    if (!habitSnap.exists()) return;
+
+    const habitData = habitSnap.data() as HabitFirestore;
+    const isActive = Boolean(habitData.activo ?? true);
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+    const currentActive = Number(dashboard.total_habitos_activos ?? 0);
+
+    // Eliminar hábito
+    transaction.delete(habitRef);
+
+    // Decrementar solo si estaba activo
+    if (isActive) {
+      transaction.set(
+        userRef,
+        {
+          dashboard: {
+            ...dashboard,
+            total_habitos_activos: Math.max(0, currentActive - 1),
+            ultima_actualizacion: serverTimestamp(),
+          },
+        },
+        { merge: true }
+      );
+    }
+  });
 }
 
 export async function completeHabit(uid: string, habitId: string, dateId: string) {
