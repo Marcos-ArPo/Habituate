@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { collection, doc, documentId, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
@@ -46,10 +45,37 @@ function buildLinePath(points: Point[]) {
     .join(' ');
 }
 
+const DEFAULT_DASHBOARD = {
+  totalHabitosActivos: 0,
+  totalTareasPendientes: 0,
+  habitosCompletadosHoy: 0,
+  tareasCompletadasHoy: 0,
+  rachaActual: 0,
+};
+
+function normalizeDashboard(raw: Record<string, any>): DashboardData {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_DASHBOARD };
+
+  const totalHabitosActivos = Number(raw.total_habitos_activos ?? raw.totalHabitosActivos ?? 0);
+  const totalTareasPendientes = Number(raw.total_tareas_pendientes ?? raw.totalTareasPendientes ?? 0);
+  const habitosCompletadosHoy = Number(raw.habitos_completados_hoy ?? raw.habitosCompletadosHoy ?? 0);
+  const tareasCompletadasHoy = Number(
+    raw.tareas_completadas_hoy ?? raw.tareasCompletadasHoy ?? raw.tareas_completados_hoy ?? 0
+  );
+  const rachaActual = Number(raw.racha_actual ?? raw.rachaActual ?? 0);
+
+  return {
+    totalHabitosActivos,
+    totalTareasPendientes,
+    habitosCompletadosHoy,
+    tareasCompletadasHoy,
+    rachaActual,
+  };
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
-  const router = useRouter();
   const { currentUser } = useUser();
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData>({
@@ -59,12 +85,15 @@ export default function HomeScreen() {
     tareasCompletadasHoy: 0,
     rachaActual: 0,
   });
-  const [loading, setLoading] = useState(true);
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    setLoading(true);
+    setLoadingDashboard(true);
+    setLoadingStats(true);
+
     const userRef = doc(db, 'usuarios', currentUser.id);
     const statsRef = collection(db, 'usuarios', currentUser.id, 'estadisticas');
     const dateWindow = buildRecentDateIds(CHART_WINDOW_DAYS);
@@ -77,72 +106,95 @@ export default function HomeScreen() {
       orderBy(documentId(), 'asc')
     );
 
-    const unsubscribeDashboard = onSnapshot(userRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        setDashboard({
-          totalHabitosActivos: 0,
-          totalTareasPendientes: 0,
-          habitosCompletadosHoy: 0,
-          tareasCompletadasHoy: 0,
-          rachaActual: 0,
-        });
-        return;
-      }
+    let unsubscribeDashboard = () => {};
+    let unsubscribeStats = () => {};
 
-      const rawDashboard = snapshot.data().dashboard ?? {};
-      setDashboard({
-        totalHabitosActivos: Number(rawDashboard.total_habitos_activos ?? 0),
-        totalTareasPendientes: Number(rawDashboard.total_tareas_pendientes ?? 0),
-        habitosCompletadosHoy: Number(rawDashboard.habitos_completados_hoy ?? 0),
-        tareasCompletadasHoy: Number(
-          rawDashboard.tareas_completadas_hoy ?? rawDashboard.tareas_completados_hoy ?? 0
-        ),
-        rachaActual: Number(rawDashboard.racha_actual ?? 0),
-      });
-    });
+    try {
+      unsubscribeDashboard = onSnapshot(
+        userRef,
+        (snapshot) => {
+          if (!snapshot.exists()) {
+            setDashboard({
+              totalHabitosActivos: 0,
+              totalTareasPendientes: 0,
+              habitosCompletadosHoy: 0,
+              tareasCompletadasHoy: 0,
+              rachaActual: 0,
+            });
+            setLoadingDashboard(false);
+            return;
+          }
 
-    const unsubscribeStats = onSnapshot(
-      statsQuery,
-      (snapshots) => {
-        const byDate = new Map(
-          snapshots.docs.map((item) => [
-            item.id,
-            {
-              habitosCompletados: Number(item.data().habitos_completados ?? 0),
-              tareasCompletadas: Number(item.data().tareas_completadas ?? 0),
-            },
-          ])
-        );
+          const rawDashboard = snapshot.data().dashboard ?? {};
+          setDashboard(normalizeDashboard(rawDashboard));
+          setLoadingDashboard(false);
+        },
+        (error) => {
+          console.warn('Dashboard snapshot error:', error);
+          setDashboard({
+            totalHabitosActivos: 0,
+            totalTareasPendientes: 0,
+            habitosCompletadosHoy: 0,
+            tareasCompletadasHoy: 0,
+            rachaActual: 0,
+          });
+          setLoadingDashboard(false);
+        }
+      );
 
-        const stats: WeeklyStat[] = dateWindow.map((dateId) => {
-          const [year, month, day] = dateId.split('-').map(Number);
-          const date = new Date(year, month - 1, day);
-          const item = byDate.get(dateId);
+      unsubscribeStats = onSnapshot(
+        statsQuery,
+        (snapshots) => {
+          const byDate = new Map(
+            snapshots.docs.map((item) => [
+              item.id,
+              {
+                habitosCompletados: Number(item.data().habitos_completados ?? 0),
+                tareasCompletadas: Number(item.data().tareas_completadas ?? 0),
+              },
+            ])
+          );
 
-          return {
-            dateId,
-            dayLabel: date.toLocaleDateString('es-ES', { weekday: 'short' }),
-            habitosCompletados: item?.habitosCompletados ?? 0,
-            tareasCompletadas: item?.tareasCompletadas ?? 0,
-          };
-        });
+          const stats: WeeklyStat[] = dateWindow.map((dateId) => {
+            const [year, month, day] = dateId.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            const item = byDate.get(dateId);
 
-        setWeeklyStats(stats);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Código de error:', error.code);
-        console.error('Mensaje:', error.message);
-        setWeeklyStats([]);
-        setLoading(false);
-      }
-    );
+            return {
+              dateId,
+              dayLabel: date.toLocaleDateString('es-ES', { weekday: 'short' }),
+              habitosCompletados: item?.habitosCompletados ?? 0,
+              tareasCompletadas: item?.tareasCompletadas ?? 0,
+            };
+          });
+
+          setWeeklyStats(stats);
+          setLoadingStats(false);
+        },
+        (error) => {
+          console.warn('Stats snapshot error:', error);
+          setWeeklyStats([]);
+          setLoadingStats(false);
+        }
+      );
+    } catch (err) {
+      console.error('Subscription failure:', err);
+      setWeeklyStats([]);
+      setLoadingDashboard(false);
+      setLoadingStats(false);
+    }
 
     return () => {
-      unsubscribeDashboard();
-      unsubscribeStats();
+      try {
+        unsubscribeDashboard();
+      } catch {}
+      try {
+        unsubscribeStats();
+      } catch {}
     };
   }, [currentUser?.id]);
+
+  const loading = loadingDashboard || loadingStats;
 
   const days = useMemo(() => {
     if (weeklyStats.length === 0) {

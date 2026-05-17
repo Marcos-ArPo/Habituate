@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { useAppSettings } from '@/context/settings-context';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
@@ -10,23 +11,31 @@ export default function LoadingScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const { currentUser, isHydrated } = useUser();
+  const { isSettingsHydrated } = useAppSettings();
 
   useEffect(() => {
     if (!isHydrated) return;
 
     if (currentUser) {
+      if (!isSettingsHydrated) return;
       router.replace('/(tabs)/pantallaInicio');
       return;
     }
 
     router.replace('/');
-  }, [currentUser, isHydrated, router]);
+  }, [currentUser, isHydrated, isSettingsHydrated, router]);
+
+  const statusLabel = currentUser
+    ? isSettingsHydrated
+      ? 'Entrando en tu cuenta'
+      : 'Cargando tus ajustes'
+    : 'Comprobando tu sesión';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <AppText style={[styles.title, { color: colors.text }]}>Habituate</AppText>
       <ActivityIndicator size="large" color={colors.primary} />
-      <AppText style={[styles.subtitle, { color: colors.mutedText }]}>Comprobando tu sesión</AppText>
+      <AppText style={[styles.subtitle, { color: colors.mutedText }]}>{statusLabel}</AppText>
     </View>
   );
 }

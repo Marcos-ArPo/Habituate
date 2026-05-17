@@ -103,3 +103,12 @@ jobs:
           path: dist/app-release.apk
           if-no-files-found: error
           retention-days: 14
+      
+      - name: Publish EAS Update (OTA)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          echo "Publishing EAS Update to branch 'production' with commit ${GITHUB_SHA}"
+          eas whoami
+          npx expo export --platform web
+          eas deploy

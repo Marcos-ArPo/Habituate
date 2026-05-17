@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { SettingsProvider, useAppSettings } from '@/context/settings-context';
+import { SettingsHydrator } from '@/context/settings-hydrator';
 import { UserProvider } from '@/context/user-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -15,6 +16,7 @@ export default function RootLayout() {
   return (
     <SettingsProvider>
       <UserProvider>
+        <SettingsHydrator />
         <RootNavigator />
       </UserProvider>
     </SettingsProvider>

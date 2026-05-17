@@ -1,20 +1,20 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    StyleSheet,
+    TextInput,
+    useWindowDimensions,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 
 import { AppText } from '@/components/app-text';
-import { useAppTheme } from '@/hooks/use-app-theme';
 import { useUser } from '@/context/user-context';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function SetupPhonesScreen() {
   const router = useRouter();
@@ -56,7 +56,7 @@ export default function SetupPhonesScreen() {
       return;
     }
 
-    router.replace('/(tabs)/pantallaInicio');
+    router.replace('/loading');
   }
 
   return (

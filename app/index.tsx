@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    StyleSheet,
+    TextInput,
+    useWindowDimensions,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useRouter } from 'expo-router';
-import { useUser } from '@/context/user-context';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
@@ -40,7 +39,7 @@ export default function LoginScreen() {
     if (!isHydrated) return;
     if (!currentUser) return;
 
-    router.replace('/(tabs)/pantallaInicio');
+    router.replace('/loading');
   }, [currentUser, isHydrated, router]);
 
   function handleEmailBlur() {
@@ -97,7 +96,7 @@ export default function LoginScreen() {
       return;
     }
 
-    router.replace('/(tabs)/pantallaInicio');
+    router.replace('/loading');
   }
 
   return (

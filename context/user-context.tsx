@@ -1,12 +1,12 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
+    createUserWithEmailAndPassword,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile,
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import { auth, db } from '@/services/firebase';
 
@@ -49,8 +49,6 @@ function buildFirestoreUserPayload(user: User) {
 function buildDefaultConfig() {
   return {
     config_modo_oscuro: false,
-    config_notificaciones: false,
-    config_sonido: true,
     config_tamano_fuente: 1,
     token_fcm: '',
   };
