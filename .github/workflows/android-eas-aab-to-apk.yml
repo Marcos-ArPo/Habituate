@@ -1,0 +1,114 @@
+name: Android Release APK (EAS AAB -> bundletool) publish to main
+
+on:
+  push:
+    branches:
+      - "**"
+      - "!main" # excluye main para evitar loops cuando el workflow hace commit a main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-aab-and-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (source branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Authenticate to Expo / EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Trigger EAS build (Android AAB) using production profile
+        run: |
+          eas build --platform android --profile production --non-interactive --wait
+
+      - name: Download the latest Android build artifact (.aab)
+        run: |
+          npm i -g eas-cli
+          BUILD_JSON="$(eas build:list --platform android --limit 1 --json)"
+          echo "$BUILD_JSON" > build.json
+
+          AAB_URL="$(node -e "const b=require('./build.json')[0]; console.log((b.artifacts && (b.artifacts.buildUrl || b.artifacts.applicationArchiveUrl)) || '')")"
+          if [ -z "$AAB_URL" ]; then
+            echo "ERROR: Could not find AAB URL in build.json. Dumping build.json:"
+            cat build.json
+            exit 1
+          fi
+
+          mkdir -p dist
+          curl -L "$AAB_URL" -o dist/app-release.aab
+          ls -lah dist
+
+      - name: Setup Java (required by bundletool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download bundletool
+        run: |
+          BUNDLETOOL_VERSION="1.16.0"
+          curl -L "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" -o bundletool.jar
+          java -jar bundletool.jar version
+
+      - name: Restore Android keystore from secrets
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+          test -s keystore.jks
+          ls -lah keystore.jks
+
+      - name: Build signed universal APK from AAB (bundletool)
+        run: |
+          java -jar bundletool.jar build-apks \
+            --bundle=dist/app-release.aab \
+            --output=dist/app.apks \
+            --mode=universal \
+            --ks=keystore.jks \
+            --ks-pass=pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --ks-key-alias=${{ secrets.ANDROID_KEY_ALIAS }}
+
+          unzip -q dist/app.apks -d dist/apk || jar xf dist/app.apks -C dist/apk
+
+          if [ -f dist/apk/universal.apk ]; then
+            cp dist/apk/universal.apk dist/app-release.apk
+          else
+            echo "ERROR: universal.apk not found. Files produced:"
+            find dist -maxdepth 3 -type f -print
+            exit 1
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: dist/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      
+      - name: Publish EAS Update (OTA)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          echo "Publishing EAS Update to branch 'production' with commit ${GITHUB_SHA}"
+          eas whoami
+          npx expo export --platform web
+          eas deploy
