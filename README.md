@@ -2,7 +2,11 @@
 
 Bienvenido a Habituate. Esta aplicación te ayuda a crear, seguir y completar hábitos y tareas diarias para mejorar tu productividad y constancia.
 
-Puedes probar la versión web en: https://habituate--fzba4tkzaa.expo.app/
+Puedes probar la versión web escaneando este QR:\
+![QR de la web](qrs-images\qr-web.jpg)
+
+Puedes descargarte el archivo APK para Android aqui:\
+![QR del APK](qrs-images\qr-app.jpg)
 
 En pocas palabras, Habituate te permite:
 - Registrar una cuenta y configurar números de contacto.
