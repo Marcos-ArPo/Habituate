@@ -13,6 +13,7 @@ export function SettingsHydrator() {
   const {
     setFontScale,
     setDarkModeEnabled,
+    setNotificationsEnabled,
     setSettingsHydrated,
     resetSettingsToDefaults,
   } = useAppSettings();
@@ -55,12 +56,16 @@ export function SettingsHydrator() {
             typeof data.config_modo_oscuro === 'boolean'
               ? data.config_modo_oscuro
               : DEFAULT_DARK_MODE;
+          const remoteNotificationsEnabled =
+            typeof data.config_notificaciones === 'boolean' ? data.config_notificaciones : false;
 
           setFontScale(remoteFontScale);
           setDarkModeEnabled(remoteDarkMode);
+          setNotificationsEnabled(remoteNotificationsEnabled);
         } else {
           setFontScale(DEFAULT_FONT_SCALE);
           setDarkModeEnabled(DEFAULT_DARK_MODE);
+          setNotificationsEnabled(false);
         }
       } catch {
         if (cancelled) {
@@ -69,6 +74,7 @@ export function SettingsHydrator() {
 
         setFontScale(DEFAULT_FONT_SCALE);
         setDarkModeEnabled(DEFAULT_DARK_MODE);
+        setNotificationsEnabled(false);
       } finally {
         if (cancelled) {
           return;
@@ -90,6 +96,7 @@ export function SettingsHydrator() {
     resetSettingsToDefaults,
     setDarkModeEnabled,
     setFontScale,
+    setNotificationsEnabled,
     setSettingsHydrated,
   ]);
 

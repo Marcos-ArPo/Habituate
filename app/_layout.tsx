@@ -1,12 +1,14 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { SettingsProvider, useAppSettings } from '@/context/settings-context';
 import { SettingsHydrator } from '@/context/settings-hydrator';
 import { UserProvider } from '@/context/user-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { configureNotificationHandler, ensureNotificationChannel } from '@/services/notifications';
 
 export const unstable_settings = {
   anchor: 'loading',
@@ -24,6 +26,11 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
+  useEffect(() => {
+    configureNotificationHandler();
+    ensureNotificationChannel().catch(() => undefined);
+  }, []);
+
   const colorScheme = useColorScheme();
   const { colorScheme: appColorScheme } = useAppSettings();
 

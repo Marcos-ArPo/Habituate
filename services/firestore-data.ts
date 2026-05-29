@@ -1,20 +1,22 @@
 import {
-  addDoc,
-  collection,
-  doc,
-  documentId,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  runTransaction,
-  serverTimestamp,
-  updateDoc,
-  where,
+    addDoc,
+    collection,
+    doc,
+    documentId,
+    getDoc,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    runTransaction,
+    serverTimestamp,
+    updateDoc,
+    where,
 } from 'firebase/firestore';
 
+import { syncAchievementsForUser } from '@/services/achievements';
 import { db } from '@/services/firebase';
+import { cancelNotificationIds, scheduleHabitReminders } from '@/services/notifications';
 
 export type DashboardData = {
   totalHabitosActivos: number;
@@ -52,6 +54,7 @@ export type HabitFirestore = {
   activo: boolean;
   creado_en: any;
   actualizado_en?: any;
+  notification_ids?: string[];
 };
 
 function toDateId(date: Date) {
@@ -247,6 +250,18 @@ export async function createHabit(
     );
   });
 
+  const notificationIds = await scheduleHabitReminders({
+    habitId: docRef.id,
+    title: habitPayload.titulo,
+    daysWeek: habitPayload.dias_semana,
+  });
+
+  if (notificationIds.length > 0) {
+    await updateDoc(docRef, { notification_ids: notificationIds });
+  }
+
+  await syncAchievementsForUser(uid, 'habitCreated');
+
   return docRef.id;
 }
 
@@ -266,6 +281,7 @@ export async function updateHabit(
   }>
 ) {
   const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
+  const currentSnapshot = await getDoc(habitRef);
   const updatePayload: Record<string, any> = {
     actualizado_en: serverTimestamp(),
   };
@@ -282,12 +298,31 @@ export async function updateHabit(
   if (updates.diasSemana !== undefined) updatePayload.dias_semana = updates.diasSemana;
 
   await updateDoc(habitRef, updatePayload);
+
+  const currentData = currentSnapshot.exists() ? currentSnapshot.data() : null;
+  await cancelNotificationIds(Array.isArray(currentData?.notification_ids) ? currentData.notification_ids : []);
+
+  const nextSnapshot = await getDoc(habitRef);
+  const nextData = nextSnapshot.exists() ? nextSnapshot.data() : null;
+  if (nextData && Boolean(nextData.activo ?? true)) {
+    const notificationIds = await scheduleHabitReminders({
+      habitId,
+      title: String(nextData.titulo ?? updates.titulo ?? ''),
+      daysWeek: Array.isArray(nextData.dias_semana) ? nextData.dias_semana : updates.diasSemana ?? [],
+    });
+
+    if (notificationIds.length > 0) {
+      await updateDoc(habitRef, { notification_ids: notificationIds });
+    }
+  }
 }
 
 /**
  * Desactivar un hábito (soft delete)
  */
 export async function deactivateHabit(uid: string, habitId: string) {
+  let notificationIds: string[] = [];
+
   await runTransaction(db, async (transaction) => {
     const userRef = doc(db, 'usuarios', uid);
     const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
@@ -298,6 +333,9 @@ export async function deactivateHabit(uid: string, habitId: string) {
     ]);
 
     if (!habitSnap.exists()) return;
+
+    const habitData = habitSnap.data() as HabitFirestore;
+    notificationIds = habitData.notification_ids ?? [];
 
     const userData = userSnap.exists() ? userSnap.data() : {};
     const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
@@ -322,6 +360,8 @@ export async function deactivateHabit(uid: string, habitId: string) {
       { merge: true }
     );
   });
+
+  await cancelNotificationIds(notificationIds);
 }
 
 /**
@@ -362,12 +402,28 @@ export async function reactivateHabit(uid: string, habitId: string) {
       { merge: true }
     );
   });
+
+  const habitSnapshot = await getDoc(doc(db, 'usuarios', uid, 'habitos', habitId));
+  const habitData = habitSnapshot.exists() ? (habitSnapshot.data() as HabitFirestore) : null;
+  if (habitData) {
+    const notificationIds = await scheduleHabitReminders({
+      habitId,
+      title: String(habitData.titulo ?? ''),
+      daysWeek: Array.isArray(habitData.dias_semana) ? habitData.dias_semana : [],
+    });
+
+    if (notificationIds.length > 0) {
+      await updateDoc(doc(db, 'usuarios', uid, 'habitos', habitId), { notification_ids: notificationIds });
+    }
+  }
 }
 
 /**
  * Eliminar un hábito completamente (hard delete)
  */
 export async function deleteHabit(uid: string, habitId: string) {
+  let notificationIds: string[] = [];
+
   await runTransaction(db, async (transaction) => {
     const userRef = doc(db, 'usuarios', uid);
     const habitRef = doc(db, 'usuarios', uid, 'habitos', habitId);
@@ -381,9 +437,12 @@ export async function deleteHabit(uid: string, habitId: string) {
 
     const habitData = habitSnap.data() as HabitFirestore;
     const isActive = Boolean(habitData.activo ?? true);
+    notificationIds = habitData.notification_ids ?? [];
 
     const userData = userSnap.exists() ? userSnap.data() : {};
     const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+
+  await cancelNotificationIds(notificationIds);
     const currentActive = Number(dashboard.total_habitos_activos ?? 0);
 
     // Eliminar hábito

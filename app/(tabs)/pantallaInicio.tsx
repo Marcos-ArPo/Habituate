@@ -5,10 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { AppText } from '@/components/app-text';
+import { SummaryWidget } from '@/components/summary-widget';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { syncAchievementsForUser } from '@/services/achievements';
 import { db } from '@/services/firebase';
 import { type DashboardData, type WeeklyStat } from '@/services/firestore-data';
+import { Ionicons } from '@expo/vector-icons';
 
 type Point = { x: number; y: number };
 
@@ -53,6 +56,14 @@ const DEFAULT_DASHBOARD = {
   rachaActual: 0,
 };
 
+type AchievementItem = {
+  id: string;
+  titulo?: string;
+  descripcion?: string;
+  icono?: string;
+  categoria?: string;
+};
+
 function normalizeDashboard(raw: Record<string, any>): DashboardData {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_DASHBOARD };
 
@@ -78,6 +89,7 @@ export default function HomeScreen() {
   const { colors } = useAppTheme();
   const { currentUser } = useUser();
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
+  const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData>({
     totalHabitosActivos: 0,
     totalTareasPendientes: 0,
@@ -87,15 +99,18 @@ export default function HomeScreen() {
   });
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingAchievements, setLoadingAchievements] = useState(true);
 
   useEffect(() => {
     if (!currentUser?.id) return;
 
     setLoadingDashboard(true);
     setLoadingStats(true);
+    setLoadingAchievements(true);
 
     const userRef = doc(db, 'usuarios', currentUser.id);
     const statsRef = collection(db, 'usuarios', currentUser.id, 'estadisticas');
+    const achievementsRef = collection(db, 'usuarios', currentUser.id, 'logros');
     const dateWindow = buildRecentDateIds(CHART_WINDOW_DAYS);
     const startDateId = dateWindow[0];
     const endDateId = dateWindow[dateWindow.length - 1];
@@ -108,6 +123,7 @@ export default function HomeScreen() {
 
     let unsubscribeDashboard = () => {};
     let unsubscribeStats = () => {};
+    let unsubscribeAchievements = () => {};
 
     try {
       unsubscribeDashboard = onSnapshot(
@@ -177,11 +193,29 @@ export default function HomeScreen() {
           setLoadingStats(false);
         }
       );
+
+      unsubscribeAchievements = onSnapshot(
+        query(achievementsRef, orderBy(documentId(), 'asc')),
+        (snapshots) => {
+          setAchievements(
+            snapshots.docs.map((item) => ({
+              id: item.id,
+              ...item.data(),
+            }))
+          );
+          setLoadingAchievements(false);
+        },
+        () => {
+          setAchievements([]);
+          setLoadingAchievements(false);
+        }
+      );
     } catch (err) {
       console.error('Subscription failure:', err);
       setWeeklyStats([]);
       setLoadingDashboard(false);
       setLoadingStats(false);
+      setLoadingAchievements(false);
     }
 
     return () => {
@@ -191,10 +225,22 @@ export default function HomeScreen() {
       try {
         unsubscribeStats();
       } catch {}
+      try {
+        unsubscribeAchievements();
+      } catch {}
     };
   }, [currentUser?.id]);
 
+  useEffect(() => {
+    if (!currentUser?.id || loadingDashboard) {
+      return;
+    }
+
+    syncAchievementsForUser(currentUser.id, 'sync').catch(() => undefined);
+  }, [currentUser?.id, dashboard.habitosCompletadosHoy, dashboard.rachaActual, dashboard.totalHabitosActivos, dashboard.totalTareasPendientes, dashboard.tareasCompletadasHoy, loadingDashboard]);
+
   const loading = loadingDashboard || loadingStats;
+  const achievementsLoading = loadingAchievements;
 
   const days = useMemo(() => {
     if (weeklyStats.length === 0) {
@@ -285,6 +331,13 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <SummaryWidget
+          colors={colors}
+          habitsActive={dashboard.totalHabitosActivos}
+          tasksPending={dashboard.totalTareasPendientes}
+          streak={dashboard.rachaActual}
+        />
+
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
           <AppText style={[styles.cardTitle, { color: colors.text }]}>Completados por día</AppText>
           <View style={styles.legendRow}>
@@ -381,6 +434,33 @@ export default function HomeScreen() {
                 <AppText style={[styles.rowScore, { color: colors.text }]}>{dashboard.rachaActual}</AppText>
               </View>
             </>
+          )}
+        </View>
+
+        <AppText style={[styles.sectionTitle, { color: colors.text }]}>Logros desbloqueados</AppText>
+        <View style={[styles.achievementCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          {achievementsLoading ? (
+            <View style={styles.row}>
+              <AppText style={[styles.rowName, { color: colors.mutedText }]}>Cargando logros...</AppText>
+            </View>
+          ) : achievements.length === 0 ? (
+            <View style={styles.row}>
+              <AppText style={[styles.rowName, { color: colors.mutedText }]}>Todavía no has desbloqueado logros.</AppText>
+            </View>
+          ) : (
+            achievements.map((item) => (
+              <View key={item.id} style={styles.achievementRow}>
+                <View style={[styles.achievementIcon, { backgroundColor: colors.primary }]}> 
+                  <Ionicons name={(item.icono as any) ?? 'trophy'} size={18} color={colors.onPrimary} />
+                </View>
+                <View style={styles.achievementTextWrap}>
+                  <AppText style={[styles.achievementTitle, { color: colors.text }]}>{item.titulo ?? item.id}</AppText>
+                  <AppText style={[styles.achievementSubtitle, { color: colors.mutedText }]}>
+                    {item.descripcion ?? 'Logro desbloqueado'}
+                  </AppText>
+                </View>
+              </View>
+            ))
           )}
         </View>
       </ScrollView>
@@ -488,6 +568,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 6,
   },
+  achievementCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 6,
+    marginTop: 2,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -511,5 +597,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#9ca3af',
     fontWeight: '700',
+  },
+  achievementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  achievementIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  achievementTextWrap: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  achievementSubtitle: {
+    fontSize: 10,
+    marginTop: 2,
   },
 });

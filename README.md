@@ -8,6 +8,44 @@ Puedes probar la versión web escaneando este QR:\
 Puedes descargarte el archivo APK para Android aqui:\
 ![QR del APK](qrs-images/qr-app.jpg)
 
+## API segura
+
+Este repositorio incluye una API propia en [api/src/index.js](api/src/index.js) protegida con Firebase Admin. La autenticación usa ID tokens de Firebase, que son JWT firmados por Google, así que no dependes de una sesión casera ni de secretos compartidos en el cliente.
+
+Rutas principales:
+- `GET /health`
+- `GET /v1/me`
+- `PATCH /v1/me`
+- `PATCH /v1/me/settings`
+- `GET /v1/me/dashboard`
+- `GET /v1/me/stats`
+- `GET /v1/me/habits`
+- `POST /v1/me/habits`
+- `POST /v1/me/habits/:habitId/complete`
+- `GET /v1/me/tasks`
+- `POST /v1/me/tasks`
+- `POST /v1/me/tasks/:taskId/complete`
+
+### Ejecutar en local
+
+1. Entra en `api/`.
+2. Copia [api/.env.example](api/.env.example) a `.env` y completa las credenciales de Firebase Admin.
+3. Ejecuta `npm install` dentro de `api/`.
+4. Arranca la API con `npm run dev`.
+
+También puedes usar desde la raíz `npm run api:dev`.
+
+### Despliegue en Render
+
+El repo trae un blueprint listo en [render.yaml](render.yaml). Render levanta el servicio desde `api/` con `npm install` y `npm start`.
+
+Variables de entorno que debes configurar en Render:
+- `NODE_ENV=production`
+- `CORS_ORIGINS` con los orígenes permitidos de la app web
+- `FIREBASE_SERVICE_ACCOUNT_KEY` o, alternativamente, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` y `FIREBASE_PRIVATE_KEY`
+
+El frontend Expo sigue funcionando como antes. La API queda lista para migrar la lógica sensible fuera del cliente sin romper la app actual.
+
 En pocas palabras, Habituate te permite:
 - Registrar una cuenta y configurar números de contacto.
 - Crear hábitos recurrentes y programar recordatorios.

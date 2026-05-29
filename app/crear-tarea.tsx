@@ -1,32 +1,42 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, {
-  type DateTimePickerEvent,
+    type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
-import { addDoc, collection, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { syncAchievementsForUser } from '@/services/achievements';
 import { db } from '@/services/firebase';
+import { scheduleTaskReminder } from '@/services/notifications';
+import { playSuccessSound } from '@/services/sounds';
 
 const PRIORITIES = [1, 2, 3, 4, 5];
 const CATEGORY_OPTIONS = [
   { label: 'Deporte al aire libre', id: 'deporte-aire-libre' },
   { label: 'Medicina', id: 'medicina' },
   { label: 'Casa', id: 'casa' },
+] as const;
+
+const REMINDER_OPTIONS = [
+  { label: 'Al momento', minutesBefore: 0 },
+  { label: '15 min antes', minutesBefore: 15 },
+  { label: '1 hora antes', minutesBefore: 60 },
+  { label: '1 día antes', minutesBefore: 1440 },
 ] as const;
 
 function parseWebDateTime(webDate: string, webTime: string) {
@@ -69,6 +79,7 @@ export default function CrearTareaScreen() {
   const [webDate, setWebDate] = useState('');
   const [webTime, setWebTime] = useState('');
   const [priority, setPriority] = useState(3);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState(15);
   const [isSaving, setIsSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
@@ -137,6 +148,15 @@ export default function CrearTareaScreen() {
       return;
     }
 
+    const reminderTime = new Date(resolvedDate.getTime() - reminderMinutesBefore * 60 * 1000);
+    if (reminderTime.getTime() <= Date.now()) {
+      Alert.alert(
+        'Aviso inválido',
+        'El recordatorio elegido queda demasiado cerca o ya pasó. Elige un aviso más corto.'
+      );
+      return;
+    }
+
     try {
       setIsSaving(true);
 
@@ -161,7 +181,21 @@ export default function CrearTareaScreen() {
         creado_en: serverTimestamp(),
       };
 
-      await addDoc(collection(db, 'usuarios', currentUser.id, 'tareas'), taskPayload);
+      const createdTaskRef = await addDoc(collection(db, 'usuarios', currentUser.id, 'tareas'), taskPayload);
+
+      const notificationId = await scheduleTaskReminder({
+        taskId: createdTaskRef.id,
+        title: title.trim(),
+        dueDate: resolvedDate,
+        minutesBefore: reminderMinutesBefore,
+      });
+
+      if (notificationId) {
+        await updateDoc(createdTaskRef, { notification_id: notificationId });
+      }
+
+      await syncAchievementsForUser(currentUser.id, 'taskCreated');
+      await playSuccessSound();
 
       Alert.alert('Tarea creada', 'La tarea fue creada correctamente.');
       router.back();
@@ -342,6 +376,39 @@ export default function CrearTareaScreen() {
               ))}
             </View>
           </View>
+
+          <View style={styles.field}>
+            <AppText style={[styles.label, { color: colors.text }]}>¿Cuándo quieres que te avise?</AppText>
+            <View style={styles.reminderRow}>
+              {REMINDER_OPTIONS.map((option) => {
+                const selected = reminderMinutesBefore === option.minutesBefore;
+                return (
+                  <Pressable
+                    key={option.minutesBefore}
+                    onPress={() => setReminderMinutesBefore(option.minutesBefore)}
+                    style={[
+                      styles.reminderButton,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: selected ? colors.primary : colors.surface,
+                      },
+                    ]}
+                  >
+                    <AppText
+                      style={{
+                        color: selected ? colors.onPrimary : colors.text,
+                        fontSize: 11,
+                        fontWeight: '700',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {option.label}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -437,6 +504,20 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reminderButton: {
+    minWidth: 96,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

@@ -8,6 +8,8 @@ type SettingsContextValue = {
   setFontScale: (value: number) => void;
   darkModeEnabled: boolean;
   setDarkModeEnabled: (value: boolean) => void;
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (value: boolean) => void;
   isSettingsHydrated: boolean;
   setSettingsHydrated: (value: boolean) => void;
   resetSettingsToDefaults: () => void;
@@ -24,6 +26,8 @@ const defaultValue: SettingsContextValue = {
   setFontScale: () => undefined,
   darkModeEnabled: false,
   setDarkModeEnabled: () => undefined,
+  notificationsEnabled: false,
+  setNotificationsEnabled: () => undefined,
   isSettingsHydrated: false,
   setSettingsHydrated: () => undefined,
   resetSettingsToDefaults: () => undefined,
@@ -37,6 +41,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const defaultDarkMode = systemColorScheme === 'dark';
   const [fontScale, setFontScaleValue] = useState(1);
   const [darkModeEnabled, setDarkModeEnabled] = useState(defaultDarkMode);
+  const [notificationsEnabled, setNotificationsEnabledValue] = useState(false);
   const [isSettingsHydrated, setSettingsHydrated] = useState(false);
 
   const setFontScale = useCallback((newValue: number) => {
@@ -46,6 +51,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const resetSettingsToDefaults = useCallback(() => {
     setFontScaleValue(1);
     setDarkModeEnabled(defaultDarkMode);
+    setNotificationsEnabledValue(false);
     setSettingsHydrated(false);
   }, [defaultDarkMode]);
 
@@ -55,12 +61,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setFontScale,
       darkModeEnabled,
       setDarkModeEnabled,
+      notificationsEnabled,
+      setNotificationsEnabled: setNotificationsEnabledValue,
       isSettingsHydrated,
       setSettingsHydrated,
       resetSettingsToDefaults,
       colorScheme: darkModeEnabled ? 'dark' : 'light',
     }),
-    [darkModeEnabled, fontScale, isSettingsHydrated, resetSettingsToDefaults, setFontScale]
+    [darkModeEnabled, fontScale, isSettingsHydrated, notificationsEnabled, resetSettingsToDefaults, setFontScale]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

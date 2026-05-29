@@ -16,6 +16,7 @@ import { DaySelector } from '@/components/ui/day-selector';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { createHabit, updateHabit } from '@/services/firestore-data';
+import { playSuccessSound } from '@/services/sounds';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -107,6 +108,8 @@ export default function CrearHabitoScreen() {
 
         Alert.alert('Éxito', 'Hábito creado correctamente.');
       }
+
+      await playSuccessSound();
 
       // Navegar atrás
       setTitle('');

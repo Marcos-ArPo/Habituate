@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: habituate-api
+    env: node
+    plan: free
+    rootDir: api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production

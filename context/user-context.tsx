@@ -50,6 +50,7 @@ function buildDefaultConfig() {
   return {
     config_modo_oscuro: false,
     config_tamano_fuente: 1,
+    config_notificaciones: false,
     token_fcm: '',
   };
 }

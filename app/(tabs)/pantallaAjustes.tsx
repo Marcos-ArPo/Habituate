@@ -11,6 +11,7 @@ import { FONT_SCALE_MAX, FONT_SCALE_MIN, useAppSettings } from '@/context/settin
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { db } from '@/services/firebase';
+import { ensureNotificationPermission } from '@/services/notifications';
 
 type RowProps = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -46,22 +47,27 @@ export default function PantallaAjustesScreen() {
     setFontScale,
     darkModeEnabled,
     setDarkModeEnabled,
+    notificationsEnabled,
+    setNotificationsEnabled,
   } = useAppSettings();
 
   const [draftFontScale, setDraftFontScale] = useState(fontScale);
   const [draftDarkModeEnabled, setDraftDarkModeEnabled] = useState(darkModeEnabled);
+  const [draftNotificationsEnabled, setDraftNotificationsEnabled] = useState(notificationsEnabled);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setDraftFontScale(fontScale);
     setDraftDarkModeEnabled(darkModeEnabled);
-  }, [darkModeEnabled, fontScale]);
+    setDraftNotificationsEnabled(notificationsEnabled);
+  }, [darkModeEnabled, fontScale, notificationsEnabled]);
 
   const hasPendingChanges = useMemo(
     () =>
       Math.abs(draftFontScale - fontScale) > 0.001 ||
-      draftDarkModeEnabled !== darkModeEnabled,
-    [darkModeEnabled, draftDarkModeEnabled, draftFontScale, fontScale]
+      draftDarkModeEnabled !== darkModeEnabled ||
+      draftNotificationsEnabled !== notificationsEnabled,
+    [darkModeEnabled, draftDarkModeEnabled, draftFontScale, draftNotificationsEnabled, fontScale, notificationsEnabled]
   );
 
   const applyChanges = async () => {
@@ -73,14 +79,28 @@ export default function PantallaAjustesScreen() {
     try {
       setIsSaving(true);
 
+      if (draftNotificationsEnabled && !notificationsEnabled) {
+        const granted = await ensureNotificationPermission();
+        if (!granted) {
+          Alert.alert(
+            'Permisos requeridos',
+            'Debes permitir las notificaciones para activar los recordatorios.'
+          );
+          setDraftNotificationsEnabled(false);
+          return;
+        }
+      }
+
       await updateDoc(doc(db, 'usuarios', currentUser.id), {
         config_tamano_fuente: draftFontScale,
         config_modo_oscuro: draftDarkModeEnabled,
+        config_notificaciones: draftNotificationsEnabled,
         updatedAt: serverTimestamp(),
       });
 
       setFontScale(draftFontScale);
       setDarkModeEnabled(draftDarkModeEnabled);
+      setNotificationsEnabled(draftNotificationsEnabled);
     } catch {
       Alert.alert('Error', 'No se pudieron guardar los ajustes en Firestore.');
     } finally {
@@ -131,6 +151,39 @@ export default function PantallaAjustesScreen() {
               trackColor={{ false: '#d1d5db', true: '#6b7280' }}
               thumbColor={draftDarkModeEnabled ? colors.primary : '#f9fafb'}
             />
+          }
+        />
+
+        <SettingRow
+          icon="notifications-outline"
+          title="Notificaciones"
+          subtitle={draftNotificationsEnabled ? 'Recordatorios activos' : 'Recordatorios desactivados'}
+          colors={colors}
+          right={
+            <Pressable
+              onPress={() => setDraftNotificationsEnabled((value) => !value)}
+              style={[
+                styles.toggleButton,
+                {
+                  backgroundColor: draftNotificationsEnabled ? colors.primary : colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name={draftNotificationsEnabled ? 'notifications' : 'notifications-off-outline'}
+                size={16}
+                color={draftNotificationsEnabled ? colors.onPrimary : colors.text}
+              />
+              <AppText
+                style={[
+                  styles.toggleButtonText,
+                  { color: draftNotificationsEnabled ? colors.onPrimary : colors.text },
+                ]}
+              >
+                {draftNotificationsEnabled ? 'Desactivar' : 'Activar'}
+              </AppText>
+            </Pressable>
           }
         />
 
@@ -200,6 +253,21 @@ const styles = StyleSheet.create({
   },
   rowRight: {
     marginLeft: 10,
+  },
+  toggleButton: {
+    minWidth: 118,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  toggleButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   sliderContainer: {
     width: 100,

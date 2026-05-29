@@ -1,14 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  where,
-  type Timestamp
+    collection,
+    doc,
+    onSnapshot,
+    query,
+    runTransaction,
+    serverTimestamp,
+    where,
+    type Timestamp
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -17,15 +17,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/app-text';
 import { useUser } from '@/context/user-context';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { syncAchievementsForUser } from '@/services/achievements';
 import { db } from '@/services/firebase';
 import {
-  buildDateId,
-  deactivateHabit,
-  deleteHabit,
-  getHabitsByDate,
-  reactivateHabit,
-  type HabitItem,
+    buildDateId,
+    deactivateHabit,
+    deleteHabit,
+    getHabitsByDate,
+    reactivateHabit,
+    type HabitItem,
 } from '@/services/firestore-data';
+import { cancelNotificationId } from '@/services/notifications';
+import { playSuccessSound } from '@/services/sounds';
 
 type DayOption = {
   label: string;
@@ -190,6 +193,7 @@ export default function HabitosDiaScreen() {
 
     try {
       setIsCompleting(true);
+      let taskNotificationId: string | null = null;
 
       await runTransaction(db, async (transaction) => {
         const todayId = buildDateId(0);
@@ -212,6 +216,7 @@ export default function HabitosDiaScreen() {
         }
 
         const taskData = taskSnap.data();
+        taskNotificationId = String(taskData.notification_id ?? '');
         if (Boolean(taskData.completada)) {
           return;
         }
@@ -289,6 +294,10 @@ export default function HabitosDiaScreen() {
           { merge: true }
         );
       });
+
+      await cancelNotificationId(taskNotificationId);
+      await syncAchievementsForUser(currentUser.id, 'taskCompleted');
+      await playSuccessSound();
 
       setSelectedTask(null);
       setTasks((prev) => prev.filter((item) => item.id !== task.id));
@@ -398,6 +407,9 @@ export default function HabitosDiaScreen() {
           { merge: true }
         );
       });
+
+      await syncAchievementsForUser(currentUser.id, 'habitCompleted');
+      await playSuccessSound();
 
       setSelectedHabit(null);
       setHabits((prev) =>
