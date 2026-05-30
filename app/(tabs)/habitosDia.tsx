@@ -509,10 +509,7 @@ export default function HabitosDiaScreen() {
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerSide} />
         <AppText style={[styles.headerTitle, { color: colors.text }]}>Mi Día</AppText>
-        <Pressable style={styles.headerSide} onPress={() => 
-          activeTab === 'tareas' ? navigateToCreateTask() : navigateToCreateHabit()}>
-          <Ionicons name="add-circle" size={28} color={colors.primary} />
-        </Pressable>
+        <View style={styles.headerSide} />
       </View>
 
       <View style={[styles.tabsContainer, { borderBottomColor: colors.border }]}>
@@ -639,6 +636,17 @@ export default function HabitosDiaScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* Floating Action Button centrado inferior */}
+      <Pressable
+        style={[
+          styles.fabCenter,
+          { backgroundColor: colors.primary },
+        ]}
+        onPress={() => (activeTab === 'tareas' ? navigateToCreateTask() : navigateToCreateHabit())}
+      >
+        <Ionicons name="add" size={40} color={colors.onPrimary} />
+      </Pressable>
 
       {/* Modal para tareas */}
       <Modal visible={Boolean(selectedTask)} transparent animationType="fade" onRequestClose={() => setSelectedTask(null)}>
@@ -792,6 +800,36 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     borderBottomWidth: 0,
+  },
+  fab: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  fabCenter: {
+    position: 'absolute',
+    top: '92%',
+    left: '50%',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    transform: [{ translateX: -36 }, { translateY: -36 }],
   },
   tabText: {
     fontSize: 13,

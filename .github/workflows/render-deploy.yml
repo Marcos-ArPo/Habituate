@@ -1,0 +1,67 @@
+name: CI / Build & Deploy to Render
+
+on:
+  push:
+    branches: [ Funcionalidades ]
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web (Expo)
+        run: npm run build:web
+
+      - name: Trigger Render deploy for API
+        if: ${{ secrets.RENDER_API_KEY && secrets.RENDER_SERVICE_ID_API }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_API }}
+        run: |
+          echo "Triggering Render deploy for API (service $SERVICE_ID)"
+          curl -sS -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": true}'
+
+      - name: Trigger Render deploy for Web
+        if: ${{ secrets.RENDER_API_KEY && secrets.RENDER_SERVICE_ID_WEB }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_WEB }}
+        run: |
+          echo "Triggering Render deploy for Web (service $SERVICE_ID)"
+          curl -sS -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": true}'
+
+      - name: Generate QR for deployed web (if URL provided)
+        env:
+          WEB_URL: ${{ secrets.RENDER_WEB_URL }}
+        run: |
+          if [ -z "$WEB_URL" ]; then
+            echo "RENDER_WEB_URL not set; skipping QR generation.";
+            exit 0;
+          fi
+          echo "Generating QR for $WEB_URL"
+          npm ci --no-audit --no-fund
+          node ./scripts/generate-qr.js "$WEB_URL"
+
+      - name: Upload QR artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-qr
+          path: artifacts/qr.png

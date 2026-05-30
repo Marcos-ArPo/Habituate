@@ -3,7 +3,7 @@ import DateTimePicker, {
     type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
-import { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, runTransaction, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
     Alert,
@@ -192,6 +192,31 @@ export default function CrearTareaScreen() {
 
       if (notificationId) {
         await updateDoc(createdTaskRef, { notification_id: notificationId });
+      }
+
+      // Incrementar contador de tareas pendientes en el dashboard del usuario
+      try {
+        await runTransaction(db, async (transaction) => {
+          const userRef = doc(db, 'usuarios', currentUser.id);
+          const userSnap = await transaction.get(userRef);
+          const userData = userSnap.exists() ? userSnap.data() : {};
+          const dashboard = (userData.dashboard as Record<string, unknown> | undefined) ?? {};
+          const currentPending = Number(dashboard.total_tareas_pendientes ?? 0);
+
+          transaction.set(
+            userRef,
+            {
+              dashboard: {
+                ...dashboard,
+                total_tareas_pendientes: currentPending + 1,
+                ultima_actualizacion: serverTimestamp(),
+              },
+            },
+            { merge: true }
+          );
+        });
+      } catch (err) {
+        console.warn('No se pudo actualizar contador de tareas pendientes:', err);
       }
 
       await syncAchievementsForUser(currentUser.id, 'taskCreated');

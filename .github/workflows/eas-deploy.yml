@@ -1,0 +1,37 @@
+name: Export Web + Deploy via EAS
+
+on:
+  push:
+    branches: [ Funcionalidades ]
+
+jobs:
+  export_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export web (Expo)
+        env:
+          EXPO_NO_TELEMETRY: 1
+        run: |
+          npx expo --version
+          npx expo export --platform web --output-dir web-build
+
+      - name: Deploy to EAS (Expo Application Services)
+        if: ${{ secrets.EXPO_TOKEN }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          # Install EAS CLI and deploy. EXPO_TOKEN authenticates the CLI non-interactively.
+          npx eas-cli@latest --version
+          npx eas-cli@latest deploy --platform web --non-interactive
