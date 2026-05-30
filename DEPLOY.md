@@ -76,13 +76,13 @@ Si prefieres usar EAS para desplegar la versión web, el flujo recomendado es:
 - Exportar la app web con Expo:
 
 ```bash
-npx expo export --platform web --output-dir web-build
+npx expo export --platform web
 ```
 
 - Desplegar con EAS:
 
 ```bash
-npx eas-cli deploy --platform web --non-interactive
+npx eas-cli deploy --prod --non-interactive
 ```
 
 Requisitos y secretos:
@@ -90,7 +90,7 @@ Requisitos y secretos:
 - Guarda `EXPO_TOKEN` como secret en GitHub (Settings → Secrets → Actions).
 
 El repositorio ya incluye un workflow `.github/workflows/eas-deploy.yml` que:
-- Ejecuta `npx expo export --platform web` y luego `npx eas-cli deploy` al hacer push a `Funcionalidades`.
+- Ejecuta `npx expo export --platform web` y luego `npx eas-cli deploy --prod` al hacer push a `Funcionalidades`.
 
 Generar QR localmente
 ---------------------
@@ -100,6 +100,36 @@ Si quieres generar el QR de forma local (sin CI), ejecuta:
 node ./scripts/generate-qr.js "https://tu-servicio.onrender.com"
 ```
 El PNG se escribirá en `artifacts/qr.png`.
+
+Automatizar los pasos 3 y 4 con la API de Render
+-----------------------------------------------
+El repo incluye `scripts/render-api-deploy.js` para configurar variables de entorno y disparar deploys desde tu terminal.
+
+Ejemplo usando variables de entorno:
+```powershell
+$env:RENDER_API_KEY = 'tu_api_key'
+$env:RENDER_SERVICE_ID_API = 'service_id_api'
+$env:RENDER_SERVICE_ID_WEB = 'service_id_web'
+$env:FIREBASE_SERVICE_ACCOUNT_KEY = '...json o base64...'
+$env:RENDER_WEB_URL = 'https://tu-servicio.onrender.com'
+node ./scripts/render-api-deploy.js
+```
+
+O con campos separados de Firebase:
+```powershell
+$env:RENDER_API_KEY = 'tu_api_key'
+$env:RENDER_SERVICE_ID_API = 'service_id_api'
+$env:RENDER_SERVICE_ID_WEB = 'service_id_web'
+$env:FIREBASE_PROJECT_ID = 'tu-project-id'
+$env:FIREBASE_CLIENT_EMAIL = 'service-account@tu-project-id.iam.gserviceaccount.com'
+$env:FIREBASE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n'
+node ./scripts/render-api-deploy.js
+```
+
+Este script:
+- Crea/actualiza las variables de entorno del servicio API en Render.
+- Lanza deploy del API y del frontend.
+- Genera `artifacts/qr.png` si pasas `RENDER_WEB_URL`.
 
 Mostrar QR persistente al arrancar `npm start`
 ------------------------------------------------

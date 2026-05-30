@@ -8,7 +8,11 @@ import { SettingsProvider, useAppSettings } from '@/context/settings-context';
 import { SettingsHydrator } from '@/context/settings-hydrator';
 import { UserProvider } from '@/context/user-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { configureNotificationHandler, ensureNotificationChannel } from '@/services/notifications';
+import {
+    configureNotificationHandler,
+    ensureNotificationChannel,
+    restoreWebNotificationSchedules,
+} from '@/services/notifications';
 
 export const unstable_settings = {
   anchor: 'loading',
@@ -29,6 +33,7 @@ function RootNavigator() {
   useEffect(() => {
     configureNotificationHandler();
     ensureNotificationChannel().catch(() => undefined);
+    restoreWebNotificationSchedules();
   }, []);
 
   const colorScheme = useColorScheme();

@@ -161,7 +161,9 @@ export default function PantallaAjustesScreen() {
           colors={colors}
           right={
             <Pressable
-              onPress={() => setDraftNotificationsEnabled((value) => !value)}
+              onPress={() => {
+                setDraftNotificationsEnabled((value) => !value);
+              }}
               style={[
                 styles.toggleButton,
                 {

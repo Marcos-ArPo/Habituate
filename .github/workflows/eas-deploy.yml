@@ -25,7 +25,7 @@ jobs:
           EXPO_NO_TELEMETRY: 1
         run: |
           npx expo --version
-          npx expo export --platform web --output-dir web-build
+          npx expo export --platform web
 
       - name: Deploy to EAS (Expo Application Services)
         if: ${{ secrets.EXPO_TOKEN }}
@@ -34,4 +34,4 @@ jobs:
         run: |
           # Install EAS CLI and deploy. EXPO_TOKEN authenticates the CLI non-interactively.
           npx eas-cli@latest --version
-          npx eas-cli@latest deploy --platform web --non-interactive
+          npx eas-cli@latest deploy --prod --non-interactive
