@@ -16,6 +16,7 @@ const corsOrigins = (process.env.CORS_ORIGINS || '')
 
 const app = express();
 
+// Middleware global de seguridad y endurecimiento de la API.
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(
@@ -34,6 +35,7 @@ app.use(
   })
 );
 
+// Esquemas de payload para validar entradas (strict() rechaza campos desconocidos).
 const userUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -114,6 +116,7 @@ function getYesterdayDateId(dateId) {
   return toDateId(parsed);
 }
 
+// Convierte valores Timestamp/Date de Firestore a cadenas ISO para las respuestas.
 function normalizeTimestamp(value) {
   if (!value) return null;
   if (typeof value.toDate === 'function') return value.toDate().toISOString();
@@ -147,6 +150,7 @@ function buildDefaultConfig() {
   };
 }
 
+// Referencias centralizadas de colecciones para mantener rutas consistentes.
 function getUserRef(uid) {
   return db.collection('usuarios').doc(uid);
 }
@@ -177,6 +181,7 @@ function mapUserSnapshot(uid, data, fallbackEmail = '', fallbackName = '') {
   };
 }
 
+// Adapta nombres de campos legacy/nuevos a un contrato de respuesta estable.
 function mapUserDocument(snapshot, authUser) {
   const data = snapshot.exists ? snapshot.data() : {};
   return {
@@ -245,6 +250,7 @@ function shouldHabitBeDisplayed(daysWeek, dateId) {
   return daysWeek.includes(dayOfWeek);
 }
 
+// Verifica el token de Firebase y adjunta el contexto del usuario autenticado.
 function authorizeRequest(req, res, next) {
   const header = String(req.headers.authorization ?? '');
   const [, token] = header.split(' ');
@@ -266,6 +272,7 @@ function authorizeRequest(req, res, next) {
     .catch(() => res.status(401).json({ error: 'invalid_token' }));
 }
 
+// Garantiza que cada usuario autenticado tenga su documento base con valores por defecto.
 async function ensureUserDocument(authUser) {
   const userRef = getUserRef(authUser.uid);
   const snapshot = await userRef.get();
@@ -290,6 +297,7 @@ async function ensureUserDocument(authUser) {
   return snapshot;
 }
 
+// Lee estadísticas de hoy y ayer para calcular la evolución de la racha.
 async function computeDailyTotals(transaction, uid, dateId) {
   const todayStatsRef = getStatsRef(uid).doc(dateId);
   const yesterdayStatsRef = getStatsRef(uid).doc(getYesterdayDateId(dateId));
@@ -324,6 +332,7 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'habituate-api', timestamp: new Date().toISOString() });
 });
 
+// Endpoint de inicialización y lectura del perfil.
 app.get('/v1/me', authorizeRequest, async (req, res, next) => {
   try {
     const snapshot = await ensureUserDocument(req.authUser);
@@ -333,6 +342,7 @@ app.get('/v1/me', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Actualizaciones parciales del perfil.
 app.patch('/v1/me', authorizeRequest, async (req, res, next) => {
   try {
     const payload = userUpdateSchema.parse(req.body ?? {});
@@ -358,6 +368,7 @@ app.patch('/v1/me', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Actualizaciones de ajustes de usuario a nivel de app.
 app.patch('/v1/me/settings', authorizeRequest, async (req, res, next) => {
   try {
     const payload = settingsUpdateSchema.parse(req.body ?? {});
@@ -376,6 +387,7 @@ app.patch('/v1/me/settings', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Contadores agregados usados por tarjetas/widgets del dashboard.
 app.get('/v1/me/dashboard', authorizeRequest, async (req, res, next) => {
   try {
     const snapshot = await ensureUserDocument(req.authUser);
@@ -395,6 +407,7 @@ app.get('/v1/me/dashboard', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Historial diario de estadísticas (acotado entre 1 y 30 días).
 app.get('/v1/me/stats', authorizeRequest, async (req, res, next) => {
   try {
     const days = Math.max(1, Math.min(30, Number(req.query.days ?? 7)));
@@ -423,6 +436,7 @@ app.get('/v1/me/stats', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Devuelve hábitos activos para una fecha, incluyendo su estado de completado.
 app.get('/v1/me/habits', authorizeRequest, async (req, res, next) => {
   try {
     const dateId = String(req.query.date ?? toDateId(new Date()));
@@ -461,6 +475,7 @@ app.get('/v1/me/habits', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Crea un hábito y actualiza los totales del dashboard en una sola transacción.
 app.post('/v1/me/habits', authorizeRequest, async (req, res, next) => {
   try {
     const payload = habitCreateSchema.parse(req.body ?? {});
@@ -506,6 +521,7 @@ app.post('/v1/me/habits', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Endpoint de edición parcial de hábitos.
 app.patch('/v1/me/habits/:habitId', authorizeRequest, async (req, res, next) => {
   try {
     const payload = habitUpdateSchema.parse(req.body ?? {});
@@ -537,6 +553,7 @@ app.patch('/v1/me/habits/:habitId', authorizeRequest, async (req, res, next) => 
   }
 });
 
+// Desactiva el hábito (soft delete) y decrementa el contador de activos.
 app.post('/v1/me/habits/:habitId/deactivate', authorizeRequest, async (req, res, next) => {
   try {
     const userRef = getUserRef(req.authUser.uid);
@@ -579,6 +596,7 @@ app.post('/v1/me/habits/:habitId/deactivate', authorizeRequest, async (req, res,
   }
 });
 
+// Reactiva el hábito e incrementa el contador de activos.
 app.post('/v1/me/habits/:habitId/reactivate', authorizeRequest, async (req, res, next) => {
   try {
     const userRef = getUserRef(req.authUser.uid);
@@ -621,6 +639,7 @@ app.post('/v1/me/habits/:habitId/reactivate', authorizeRequest, async (req, res,
   }
 });
 
+// Elimina el hábito físicamente; actualiza contadores solo cuando corresponde.
 app.delete('/v1/me/habits/:habitId', authorizeRequest, async (req, res, next) => {
   try {
     const userRef = getUserRef(req.authUser.uid);
@@ -664,6 +683,7 @@ app.delete('/v1/me/habits/:habitId', authorizeRequest, async (req, res, next) =>
   }
 });
 
+// Marca un hábito como completado en una fecha y recalcula métricas de racha.
 app.post('/v1/me/habits/:habitId/complete', authorizeRequest, async (req, res, next) => {
   try {
     const dateId = String(req.body?.dateId ?? toDateId(new Date()));
@@ -744,6 +764,7 @@ app.post('/v1/me/habits/:habitId/complete', authorizeRequest, async (req, res, n
   }
 });
 
+// Consulta tareas según su estado de completado.
 app.get('/v1/me/tasks', authorizeRequest, async (req, res, next) => {
   try {
     const completed = String(req.query.completed ?? 'false') === 'true';
@@ -756,6 +777,7 @@ app.get('/v1/me/tasks', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Crea una tarea e incrementa el contador de tareas pendientes.
 app.post('/v1/me/tasks', authorizeRequest, async (req, res, next) => {
   try {
     const payload = taskCreateSchema.parse(req.body ?? {});
@@ -793,6 +815,7 @@ app.post('/v1/me/tasks', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Endpoint de edición parcial de tareas.
 app.patch('/v1/me/tasks/:taskId', authorizeRequest, async (req, res, next) => {
   try {
     const payload = taskUpdateSchema.parse(req.body ?? {});
@@ -830,6 +853,7 @@ app.patch('/v1/me/tasks/:taskId', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Elimina una tarea y ajusta pendientes si la tarea estaba abierta.
 app.delete('/v1/me/tasks/:taskId', authorizeRequest, async (req, res, next) => {
   try {
     const userRef = getUserRef(req.authUser.uid);
@@ -871,6 +895,7 @@ app.delete('/v1/me/tasks/:taskId', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Marca una tarea como completada y actualiza estadísticas diarias + dashboard.
 app.post('/v1/me/tasks/:taskId/complete', authorizeRequest, async (req, res, next) => {
   try {
     const dateId = String(req.body?.dateId ?? toDateId(new Date()));
@@ -948,6 +973,7 @@ app.post('/v1/me/tasks/:taskId/complete', authorizeRequest, async (req, res, nex
   }
 });
 
+// Obtiene los logros desbloqueados del usuario autenticado.
 app.get('/v1/me/achievements', authorizeRequest, async (req, res, next) => {
   try {
     const snapshot = await getAchievementsRef(req.authUser.uid).orderBy(DocumentId, 'asc').get();
@@ -957,11 +983,13 @@ app.get('/v1/me/achievements', authorizeRequest, async (req, res, next) => {
   }
 });
 
+// Manejador final de errores no capturados en rutas/servicios.
 app.use((error, _req, res, _next) => {
   console.error('API error:', error);
   res.status(500).json({ error: 'internal_error' });
 });
 
+// Arranque del servidor HTTP.
 app.listen(PORT, () => {
   console.log(`Habituate API listening on port ${PORT}`);
 });

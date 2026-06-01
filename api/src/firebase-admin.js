@@ -1,5 +1,7 @@
 import admin from 'firebase-admin';
 
+// Acepta credenciales como JSON completo o como variables de entorno separadas.
+// Esto permite que local/dev y despliegues en nube usen el mismo flujo.
 function parseServiceAccount() {
   const inlineKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (inlineKey) {
@@ -33,6 +35,7 @@ function parseServiceAccount() {
   );
 }
 
+// Inicializa solo una vez para soportar hot reload/watch en desarrollo sin errores.
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(parseServiceAccount()),
@@ -40,6 +43,7 @@ if (!admin.apps.length) {
   });
 }
 
+// Exportaciones compartidas usadas por los handlers de rutas en index.js.
 export const adminAuth = admin.auth();
 export const db = admin.firestore();
 export const FieldValue = admin.firestore.FieldValue;
